@@ -5,6 +5,10 @@
 #ifndef BITCOIN_RPC_BLOCKCHAIN_H
 #define BITCOIN_RPC_BLOCKCHAIN_H
 
+#include <hash.h>
+#include <coins.h>
+#include <pos.h>
+
 class CBlock;
 class CBlockIndex;
 class UniValue;
@@ -32,6 +36,5 @@ UniValue mempoolToJSON(bool fVerbose = false);
 
 /** Block header to JSON */
 UniValue blockheaderToJSON(const CBlockIndex* blockindex);
-
+extern const Consensus::Params GetParams();
 #endif
-

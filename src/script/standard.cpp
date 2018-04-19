@@ -9,12 +9,52 @@
 #include <script/script.h>
 #include <util.h>
 #include <utilstrencodings.h>
-
-
+#include <boost/lexical_cast.hpp>
+#include <key.h>
+#include <base58.h>
+#include <util.h>
+#include <poshelpers.h>
 typedef std::vector<unsigned char> valtype;
+
+
+#include <memory>
+#include <type_traits>
+#include <iostream>
+#include <iomanip>
+
+using byte = unsigned char ;
+
+template< typename T > std::array< byte, sizeof(T) >  to_bytes( const T& object )
+{
+    std::array< byte, sizeof(T) > bytes ;
+
+    const byte* begin = reinterpret_cast< const byte* >( std::addressof(object) ) ;
+    const byte* end = begin + sizeof(T) ;
+    std::copy( begin, end, std::begin(bytes) ) ;
+
+    return bytes ;
+}
+
+template< typename T >
+T& from_bytes( const std::array< byte, sizeof(T) >& bytes, T& object )
+{
+    // http://en.cppreference.com/w/cpp/types/is_trivially_copyable
+    static_assert( std::is_trivially_copyable<T>::value, "not a TriviallyCopyable type" ) ;
+
+    byte* begin_object = reinterpret_cast< byte* >( std::addressof(object) ) ;
+    std::copy( std::begin(bytes), std::end(bytes), begin_object ) ;
+
+    return object ;
+}
 
 bool fAcceptDatacarrier = DEFAULT_ACCEPT_DATACARRIER;
 unsigned nMaxDatacarrierBytes = MAX_OP_RETURN_RELAY;
+
+std::string ScriptToString(CScript scriptSig)
+{
+  std::string pScript(scriptSig.begin(), scriptSig.end());
+  return pScript;
+}
 
 CScriptID::CScriptID(const CScript& in) : uint160(Hash160(in.begin(), in.end())) {}
 
@@ -25,6 +65,7 @@ const char* GetTxnOutputType(txnouttype t)
     case TX_NONSTANDARD: return "nonstandard";
     case TX_PUBKEY: return "pubkey";
     case TX_PUBKEYHASH: return "pubkeyhash";
+    case SKTX_PUBKEYHASH: return "stakepubkeyhash";
     case TX_SCRIPTHASH: return "scripthash";
     case TX_MULTISIG: return "multisig";
     case TX_NULL_DATA: return "nulldata";
@@ -35,12 +76,21 @@ const char* GetTxnOutputType(txnouttype t)
     return nullptr;
 }
 
-bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
+bool Solver(const CScript& scriptPubKey1, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
 {
+    std::string pScriptPubKey = ScriptToString(scriptPubKey1);
+    std::string pDelegate = ParseDelegate(pScriptPubKey);
+    CScript temp = scriptPubKey1;
+    if(pDelegate.size() > 0){
+        temp = ExtractDelegateScript(scriptPubKey1);
+    }
+    const CScript& scriptPubKey = temp;
     // Templates
     static std::multimap<txnouttype, CScript> mTemplates;
     if (mTemplates.empty())
     {
+        // Transaction tagged as stake delegation
+        mTemplates.insert(std::make_pair(SKTX_PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_DELEGATE << OP_PUBKEYHASH << OP_STAKE << OP_EQUALVERIFY << OP_CHECKSIG));
         // Standard tx, sender provides pubkey, receiver adds signature
         mTemplates.insert(std::make_pair(TX_PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG));
 
@@ -49,6 +99,8 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::v
 
         // Sender provides N pubkeys, receivers provides M signatures
         mTemplates.insert(std::make_pair(TX_MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
+
+
     }
 
     vSolutionsRet.clear();
@@ -179,6 +231,36 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::v
     typeRet = TX_NONSTANDARD;
     return false;
 }
+CScript ExtractDelegateScript(const CScript& scriptPubKey){
+    auto bScriptPubKey = ToByteVector(scriptPubKey);
+    std::string marasa = "startdelegate";
+    const char * sarasa = marasa.c_str();
+    CScript retest = CScript() << std::vector<unsigned char>((const unsigned char*)sarasa, (const unsigned char*)sarasa + strlen(sarasa));
+    auto bStartDelegate = ToByteVector(retest);
+    uint delegateIndex = 0;
+    uint i = 0;
+    for(byte b : bScriptPubKey){
+        if (b == bStartDelegate[1])
+        {
+            delegateIndex = i;
+        }
+        if (!(delegateIndex > 0 && bStartDelegate[1+i-delegateIndex] == b)){
+            delegateIndex = 0;
+        }else if(bStartDelegate[1+i-delegateIndex] == b && (i-delegateIndex+1) == marasa.size()){
+            break;
+        }
+        i++;
+    }
+    std::vector<byte> bScript;
+    CScript script;
+    for(uint i = 0; i < delegateIndex; i++)
+    {
+        bScript.push_back(bScriptPubKey[i]);
+    }
+    bScript.pop_back();
+    script = CScript(bScript.begin(), bScript.end());
+    return script;
+}
 
 bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
 {
@@ -199,6 +281,11 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
     else if (whichType == TX_PUBKEYHASH)
     {
         addressRet = CKeyID(uint160(vSolutions[0]));
+        return true;
+    }
+    else if (whichType == SKTX_PUBKEYHASH)
+    {
+        addressRet = CScriptID(GetScriptForDestination(WitnessV0KeyHash(CKeyID(uint160(vSolutions[0])))));
         return true;
     }
     else if (whichType == TX_SCRIPTHASH)
@@ -287,6 +374,12 @@ public:
         return true;
     }
 
+    bool operator()(const CStakeKeyID &keyID) const {
+        script->clear();
+        *script << OP_DUP << OP_HASH160 << ToByteVector(keyID) << OP_EQUALVERIFY << OP_CHECKSIG << OP_DELEGATE << ToByteVector(keyID) << OP_STAKE;
+        return true;
+    }
+
     bool operator()(const CScriptID &scriptID) const {
         script->clear();
         *script << OP_HASH160 << ToByteVector(scriptID) << OP_EQUAL;
@@ -319,7 +412,6 @@ public:
 CScript GetScriptForDestination(const CTxDestination& dest)
 {
     CScript script;
-
     boost::apply_visitor(CScriptVisitor(&script), dest);
     return script;
 }
@@ -328,6 +420,25 @@ CScript GetScriptForRawPubKey(const CPubKey& pubKey)
 {
     return CScript() << std::vector<unsigned char>(pubKey.begin(), pubKey.end()) << OP_CHECKSIG;
 }
+
+CScript GetStakeScriptForDestination(const CTxDestination& dest, const CTxDestination& dest2)
+{
+    CScript script;
+    std::string pDelegation = "startdelegate" + EncodeBase64(EncodeDestination(dest2)) + "enddelegate";
+    const char* pPreparedDelegation = pDelegation.c_str();
+    script = GetScriptForDestination(dest) << std::vector<unsigned char>((const unsigned char*)pPreparedDelegation, (const unsigned char*)pPreparedDelegation + strlen(pPreparedDelegation));
+    return script;
+}
+
+CScript GetForkProofScript(uint256 nMerkleRoot, uint32_t nTime, int nHeight, std::string pBadSignature)
+{
+    CScript script;
+    std::string pSignature = "startproofstartmerkle" + EncodeBase64(nMerkleRoot.ToString()) + "endmerklestartntime" +  EncodeBase64(boost::lexical_cast<std::string>(nTime)) + "endntime" + pBadSignature +"startheight" + EncodeBase64(boost::lexical_cast<std::string>(nHeight)) + "endheightendproof";
+    const char* pPreparedSignature = pSignature.c_str();
+    script = (CScript() << std::vector<unsigned char>((const unsigned char*)pPreparedSignature, (const unsigned char*)pPreparedSignature + strlen(pPreparedSignature))); //<< ToByteVector(nMerkleRoot)  << ToByteVector(nTime) << ToByteVector(pBadSignature) << OP_CHECKPROOF;
+    return script;
+}
+
 
 CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys)
 {
@@ -352,6 +463,7 @@ CScript GetScriptForWitness(const CScript& redeemscript)
         } else if (typ == TX_PUBKEYHASH) {
             return GetScriptForDestination(WitnessV0KeyHash(vSolutions[0]));
         }
+
     }
     uint256 hash;
     CSHA256().Write(&redeemscript[0], redeemscript.size()).Finalize(hash.begin());
@@ -360,4 +472,20 @@ CScript GetScriptForWitness(const CScript& redeemscript)
 
 bool IsValidDestination(const CTxDestination& dest) {
     return dest.which() != 0;
+}
+
+std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigned int nHeight)
+{
+  std::string pAddressSignature;
+  CHashWriter ss(SER_GETHASH, 0);
+  ss << nMerkleRoot;
+  ss << nTime;
+  ss << nHeight;
+  std::vector<unsigned char> vchSig;
+  if (!key.SignCompact(ss.GetHash(), vchSig))
+  return "";
+  LogPrintf("Signature Hash: %s\n", ss.GetHash().ToString());
+  pAddressSignature = EncodeBase64(vchSig.data(), vchSig.size());
+  pAddressSignature = "startsig" + pAddressSignature + "endsigstartheight"+ EncodeBase64(boost::lexical_cast<std::string>(nHeight)) +"endheight";
+  return pAddressSignature;
 }

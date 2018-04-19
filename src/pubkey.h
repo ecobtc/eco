@@ -24,6 +24,13 @@ public:
     explicit CKeyID(const uint160& in) : uint160(in) {}
 };
 
+class CStakeKeyID : public uint160
+{
+public:
+    CStakeKeyID() : uint160() {}
+    explicit CStakeKeyID(const uint160& in) : uint160(in) {}
+};
+
 typedef uint256 ChainCode;
 
 /** An encapsulated public key. */

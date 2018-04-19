@@ -138,7 +138,8 @@ const char* GetOpName(opcodetype opcode)
     case OP_NOP8                   : return "OP_NOP8";
     case OP_NOP9                   : return "OP_NOP9";
     case OP_NOP10                  : return "OP_NOP10";
-
+    case OP_STAKE                  : return "OP_STAKE";
+    case OP_DELEGATE               : return "OP_DELEGATE";
     case OP_INVALIDOPCODE          : return "OP_INVALIDOPCODE";
 
     // Note:

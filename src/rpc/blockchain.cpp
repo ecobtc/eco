@@ -26,7 +26,8 @@
 #include <hash.h>
 #include <validationinterface.h>
 #include <warnings.h>
-
+#include <poshelpers.h>
+#include <script/standard.h>
 #include <stdint.h>
 
 #include <univalue.h>
@@ -35,6 +36,19 @@
 
 #include <mutex>
 #include <condition_variable>
+
+#include <boost/random.hpp>
+#include <boost/random/mersenne_twister.hpp>
+#include <boost/random/discrete_distribution.hpp>
+#include <restclient-cpp/restclient.h>
+
+#include <tinyxml2.h>
+#include <boost/multiprecision/cpp_int.hpp>
+#include <boost/algorithm/hex.hpp>
+#include <boost/algorithm/algorithm.hpp>
+#include <boost/algorithm/string.hpp>
+#include <string.h>
+
 
 struct CUpdatedBlock
 {
@@ -45,6 +59,10 @@ struct CUpdatedBlock
 static std::mutex cs_blockchange;
 static std::condition_variable cond_blockchange;
 static CUpdatedBlock latestblock;
+
+const Consensus::Params GetParams() {
+    return Params().GetConsensus();
+}
 
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry);
 
@@ -817,6 +835,7 @@ struct CCoinsStats
 
     CCoinsStats() : nHeight(0), nTransactions(0), nTransactionOutputs(0), nBogoSize(0), nDiskSize(0), nTotalAmount(0) {}
 };
+typedef std::vector<unsigned char> valtype;
 
 static void ApplyStats(CCoinsStats &stats, CHashWriter& ss, const uint256& hash, const std::map<uint32_t, Coin>& outputs)
 {
@@ -824,7 +843,10 @@ static void ApplyStats(CCoinsStats &stats, CHashWriter& ss, const uint256& hash,
     ss << hash;
     ss << VARINT(outputs.begin()->second.nHeight * 2 + outputs.begin()->second.fCoinBase);
     stats.nTransactions++;
+    std::vector<valtype> vSolutions;
+    txnouttype whichType;
     for (const auto output : outputs) {
+        Solver(output.second.out.scriptPubKey, whichType, vSolutions);
         ss << VARINT(output.first + 1);
         ss << output.second.out.scriptPubKey;
         ss << VARINT(output.second.out.nValue);
@@ -1562,7 +1584,7 @@ UniValue getchaintxstats(const JSONRPCRequest& request)
             pindex = chainActive.Tip();
         }
     }
-    
+
     assert(pindex != nullptr);
 
     if (request.params[0].isNull()) {
@@ -1612,7 +1634,19 @@ UniValue savemempool(const JSONRPCRequest& request)
 
     return NullUniValue;
 }
-
+UniValue printblockheights(const JSONRPCRequest& request)
+{
+    UniValue rv(UniValue::VOBJ);
+    CBlock block;
+    CBlockIndex* pindex = chainActive.Tip();
+    for (uint i = 0; i < (pindex->nHeight); i++)
+    {
+        ReadBlockFromDisk(block, chainActive[i], Params().GetConsensus());
+        std::string pParsed = ParseHeight(ScriptToString(block.vtx[0]->vin[0].scriptSig));
+        rv.push_back(Pair(boost::lexical_cast<std::string>(i), pParsed));
+    }
+    return rv;
+}
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------
@@ -1635,7 +1669,8 @@ static const CRPCCommand commands[] =
     { "blockchain",         "pruneblockchain",        &pruneblockchain,        {"height"} },
     { "blockchain",         "savemempool",            &savemempool,            {} },
     { "blockchain",         "verifychain",            &verifychain,            {"checklevel","nblocks"} },
-
+    { "blockchain",         "verifychain",            &verifychain,            {"checklevel","nblocks"} },
+    { "blockchain",         "printblockheights",      &printblockheights,      {}},
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     /* Not shown in help */

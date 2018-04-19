@@ -6,13 +6,22 @@
 
 #include <consensus/consensus.h>
 #include <primitives/transaction.h>
+#include <script/script.h>
 #include <script/interpreter.h>
 #include <consensus/validation.h>
-
+#include <consensus/merkle.h>
+#include <validation.h>
+#include <pos.h>
+#include <rpc/blockchain.h>
 // TODO remove the following dependencies
 #include <chain.h>
 #include <coins.h>
 #include <utilmoneystr.h>
+#include <util.h>
+#include <pubkey.h>
+#include <script/standard.h>
+#include <wallet/wallet.h>
+#include <poshelpers.h>
 
 bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
 {
@@ -165,9 +174,10 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
         return state.DoS(10, false, REJECT_INVALID, "bad-txns-vout-empty");
     // Size limits (this doesn't take the witness into account, as that hasn't been checked for malleability)
     if (::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS) * WITNESS_SCALE_FACTOR > MAX_BLOCK_WEIGHT)
-        return state.DoS(100, false, REJECT_INVALID, "bad-txns-oversize");
+        return state.DoS(300, false, REJECT_INVALID, "bad-txns-oversize");
 
     // Check for negative or overflow output values
+    CAmount nLittleStake = 1000;
     CAmount nValueOut = 0;
     for (const auto& txout : tx.vout)
     {
@@ -178,8 +188,12 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
         nValueOut += txout.nValue;
         if (!MoneyRange(nValueOut))
             return state.DoS(100, false, REJECT_INVALID, "bad-txns-txouttotal-toolarge");
+        bool fIsStake;
+        GetStakeDelegate(txout.scriptPubKey, &fIsStake);
+        if(fIsStake) LogPrintf("IS STAKE!IS STAKE!IS STAKE!IS STAKE!IS STAKE!IS STAKE!IS STAKE! %s\n", nLittleStake);
+        if(fIsStake && txout.nValue < nLittleStake)
+            return state.DoS(100, false, REJECT_INVALID, "too-little-at-stake");
     }
-
     // Check for duplicate inputs - note that this check is slow so we skip it in CheckBlock
     if (fCheckDuplicateInputs) {
         std::set<COutPoint> vInOutPoints;
@@ -189,35 +203,85 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
                 return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-duplicate");
         }
     }
-
     if (tx.IsCoinBase())
     {
-        if (tx.vin[0].scriptSig.size() < 2 || tx.vin[0].scriptSig.size() > 100)
+        if (tx.vin[0].scriptSig.size() < 2 || tx.vin[0].scriptSig.size() > 900)
             return state.DoS(100, false, REJECT_INVALID, "bad-cb-length");
     }
     else
     {
         for (const auto& txin : tx.vin)
+        {
             if (txin.prevout.IsNull())
                 return state.DoS(10, false, REJECT_INVALID, "bad-txns-prevout-null");
+            if (IsProofOfForkScript(txin.scriptSig) && tx.vin.size() == 1)
+            {
+                return ValidateProofOfFork(txin.scriptSig, tx.vout);
+            }
+        }
     }
-
     return true;
 }
 
+typedef std::vector<unsigned char> valtype;
 bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee)
 {
+    int nHeight = chainActive.Height();
     // are the actual inputs available?
     if (!inputs.HaveInputs(tx)) {
         return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
                          strprintf("%s: inputs missing/spent", __func__));
     }
 
+    CTxDestination address1;
+    CTxDestination address2;
+    CPubKey pubkey;
+    CBlockIndex* pblockindex;
+    CBlock block;
     CAmount nValueIn = 0;
     for (unsigned int i = 0; i < tx.vin.size(); ++i) {
         const COutPoint &prevout = tx.vin[i].prevout;
         const Coin& coin = inputs.AccessCoin(prevout);
         assert(!coin.IsSpent());
+        // if coin is stake, check that if block was signed, that the stake has matured, and it wasn't invalidated
+        bool fIsStake = false;
+        address1 = GetStakeDelegate(coin.out.scriptPubKey, &fIsStake);
+        if(fIsStake){
+            for (int i = 0; i < nHeight; i++){
+                if (i<2) return true;
+                LogPrintf("Checking Stake Maturity!");
+                //Maturity check
+                pblockindex = chainActive[i];
+                ReadBlockFromDisk(block, pblockindex, GetParams());
+                address2 = ParseCoinbaseSignature(&block);
+                //if we found a block signed by this address we also check maturity
+                if(address1 == address2 && nSpendHeight - coin.nHeight < COINBASE_MATURITY && coin.nHeight > 1001){
+                    return state.Invalid(false,
+                        REJECT_INVALID, "bad-txns-premature-spend-of-stakebase",
+                        strprintf("tried to spend stakebase at depth %d", nSpendHeight - coin.nHeight));
+                }
+                for (uint x = 0; x < block.vtx.size(); x++){
+                    for (uint y = 0; y < block.vtx[x]->vin.size(); y++){
+                        if(IsProofOfForkScript(block.vtx[x]->vin[y].scriptSig)){
+                            std::string pScript = ScriptToString(block.vtx[x]->vin[y].scriptSig);
+                            std::vector<unsigned char> pBadHeight = ToUnsignedCharVector(ParseHeight(pScript));
+                            std::vector<unsigned char> pBadMerkleRoot = ToUnsignedCharVector(ParseMerkleRoot(pScript));
+                            std::string pStringBadHeight(pBadHeight.begin(), pBadHeight.end());
+                            std::string pStringBadMerkleRoot(pBadMerkleRoot.begin(),pBadMerkleRoot.end());
+                            uint32_t nBadHeight = std::stoi(pStringBadHeight);
+                            CBlockIndex* blockIndex = chainActive[nBadHeight];
+                            CBlock block;
+                            ReadBlockFromDisk(block, blockIndex, GetParams());
+                            uint256 nBlockMerkleRoot = BlockWitnessMerkleRoot(block);
+                            if(coin.nHeight == nBadHeight && nBlockMerkleRoot == uint256S(pStringBadMerkleRoot) ) return state.Invalid(false,
+                              REJECT_INVALID, "bad-txns-premature-spend-of-proof",
+                              strprintf("tried to spend bad stake proof of violation at height %d", coin.nHeight));
+                        }
+                    }
+                }
+            }
+        }
+
 
         // If prev is coinbase, check that it's matured
         if (coin.IsCoinBase() && nSpendHeight - coin.nHeight < COINBASE_MATURITY) {
@@ -246,5 +310,13 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, c
     }
 
     txfee = txfee_aux;
+
+    for (const auto& txout : tx.vout)
+    {
+        bool fIsStake;
+        GetStakeDelegate(txout.scriptPubKey, &fIsStake);
+        if(fIsStake && txout.nValue < 1000)
+            return state.DoS(100, false, REJECT_INVALID, "too-little-at-stake");
+    }
     return true;
 }

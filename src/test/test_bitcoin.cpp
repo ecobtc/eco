@@ -17,7 +17,16 @@
 #include <rpc/register.h>
 #include <script/sigcache.h>
 
+#include <util.h>
+#include <utilstrencodings.h>
+#include <base58.h>
+
 #include <memory>
+
+
+static const std::string strSecret1 = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj";
+static const std::string addr1 = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ";
+
 
 void CConnmanTest::AddNode(CNode& node)
 {
@@ -133,19 +142,25 @@ TestChain100Setup::TestChain100Setup() : TestingSetup(CBaseChainParams::REGTEST)
 CBlock
 TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns, const CScript& scriptPubKey)
 {
+    CBitcoinSecret bsecret1;
+    bsecret1.SetString (strSecret1);
+    CKey key = bsecret1.GetKey();
+    CPubKey pubkey  = key.GetPubKey();
+    CTxDestination address = CTxDestination(pubkey.GetID());
     const CChainParams& chainparams = Params();
-    std::unique_ptr<CBlockTemplate> pblocktemplate = BlockAssembler(chainparams).CreateNewBlock(scriptPubKey);
+    std::string dummyString;
+    std::unique_ptr<CBlockTemplate> pblocktemplate = BlockAssembler(chainparams).CreateNewBlock(scriptPubKey, address, key);
     CBlock& block = pblocktemplate->block;
 
     // Replace mempool-selected txns with just coinbase plus passed-in txns:
     block.vtx.resize(1);
     for (const CMutableTransaction& tx : txns)
         block.vtx.push_back(MakeTransactionRef(tx));
-    // IncrementExtraNonce creates a valid coinbase and merkleRoot
+    // SignCoinbaseTx creates a valid coinbase and merkleRoot
     unsigned int extraNonce = 0;
     {
         LOCK(cs_main);
-        IncrementExtraNonce(&block, chainActive.Tip(), extraNonce);
+        SignCoinbaseTx(&block, chainActive.Tip(), address, key, extraNonce);
     }
 
     while (!CheckProofOfWork(block.GetHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;

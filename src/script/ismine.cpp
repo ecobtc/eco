@@ -9,7 +9,13 @@
 #include <keystore.h>
 #include <script/script.h>
 #include <script/sign.h>
-
+#include <script/standard.h>
+#include <util.h>
+#include <base58.h>
+#include <wallet/wallet.h>
+#include <wallet/walletdb.h>
+#include <wallet/walletutil.h>
+#include <poshelpers.h>
 
 typedef std::vector<unsigned char> valtype;
 
@@ -54,10 +60,30 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey, bool& 
             return ISMINE_WATCH_UNSOLVABLE;
         return ISMINE_NO;
     }
-
     CKeyID keyID;
     switch (whichType)
     {
+    case SKTX_PUBKEYHASH:
+    {
+      CTxDestination scriptID = CScriptID(GetScriptForDestination(WitnessV0KeyHash(CKeyID(uint160(vSolutions[0])))));
+      bool fValid;
+      CTxDestination scriptID2 = GetStakeDelegate(scriptPubKey, &fValid);
+      CTxDestination scriptID3;
+      ExtractDestination(scriptPubKey, scriptID3);
+      if(::vpwallets.size() >= 1)
+      {
+        CWallet * const pwallet = ::vpwallets[0];
+        CKeyID keyID = GetKeyForDestination(*pwallet, scriptID);
+        if (keyID.IsNull()) {
+          return ISMINE_NO;
+        }
+        CKey key;
+        if (pwallet->GetKey(keyID, key)) {
+          return ISMINE_SPENDABLE;
+        }
+        break;
+      }
+    }
     case TX_NONSTANDARD:
     case TX_NULL_DATA:
     case TX_WITNESS_UNKNOWN:

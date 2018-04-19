@@ -15,8 +15,11 @@
 
 static const bool DEFAULT_ACCEPT_DATACARRIER = true;
 
+class CKey;
 class CKeyID;
 class CScript;
+
+std::string ScriptToString(CScript scriptSig);
 
 /** A reference to a CScript: the Hash160 of its serialization (see script.h) */
 class CScriptID : public uint160
@@ -59,6 +62,7 @@ enum txnouttype
     // 'standard' transaction types:
     TX_PUBKEY,
     TX_PUBKEYHASH,
+    SKTX_PUBKEYHASH,
     TX_SCRIPTHASH,
     TX_MULTISIG,
     TX_NULL_DATA, //!< unspendable OP_RETURN script that carries data
@@ -126,7 +130,7 @@ bool IsValidDestination(const CTxDestination& dest);
 
 /** Get the name of a txnouttype as a C string, or nullptr if unknown. */
 const char* GetTxnOutputType(txnouttype t);
-
+CScript ExtractDelegateScript(const CScript& scriptPubKey);
 /**
  * Parse a scriptPubKey and identify script type for standard scripts. If
  * successful, returns script type and parsed pubkeys or hashes, depending on
@@ -185,4 +189,7 @@ CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
  */
 CScript GetScriptForWitness(const CScript& redeemscript);
 
+CScript GetStakeScriptForDestination(const CTxDestination& dest, const CTxDestination& dest2);
+CScript GetForkProofScript(uint256 nMerkleRoot, uint32_t nTime, int nHeight, std::string pBadSignature);
+std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigned int nHeight);
 #endif // BITCOIN_SCRIPT_STANDARD_H

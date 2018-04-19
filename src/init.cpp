@@ -29,6 +29,7 @@
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <rpc/server.h>
+#include <rpc/staking.h>
 #include <rpc/register.h>
 #include <rpc/safemode.h>
 #include <rpc/blockchain.h>

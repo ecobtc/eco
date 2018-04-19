@@ -13,7 +13,7 @@
 #include <tinyformat.h>
 #include <util.h>
 #include <utilstrencodings.h>
-
+#include <poshelpers.h>
 
 CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
 {
@@ -119,8 +119,12 @@ bool IsStandardTx(const CTransaction& tx, std::string& reason, const bool witnes
     txnouttype whichType;
     for (const CTxOut& txout : tx.vout) {
         if (!::IsStandard(txout.scriptPubKey, whichType, witnessEnabled)) {
-            reason = "scriptpubkey";
-            return false;
+            std::string pScript = ParseDelegate(ScriptToString(txout.scriptPubKey));
+            if(pScript.size() == 0)
+            {
+                reason = "scriptpubkey";
+                return false;
+            }
         }
 
         if (whichType == TX_NULL_DATA)
@@ -197,7 +201,6 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 {
     if (tx.IsCoinBase())
         return true; // Coinbases are skipped
-
     for (unsigned int i = 0; i < tx.vin.size(); i++)
     {
         // We don't care if witness for this input is empty, since it must not be bloated.
@@ -208,17 +211,27 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
         const CTxOut &prev = mapInputs.AccessCoin(tx.vin[i].prevout).out;
 
         // get the scriptPubKey corresponding to this input:
-        CScript prevScript = prev.scriptPubKey;
-
+        CScript prevScript1 = prev.scriptPubKey;
+        std::string pScriptPubKey = ScriptToString(prevScript1);
+        std::string pDelegate = ParseDelegate(pScriptPubKey);
+        CScript temp = prevScript1;
+        if(pDelegate.size() > 0){
+            temp = ExtractDelegateScript(prevScript1);
+        }
+        CScript prevScript = temp;
         if (prevScript.IsPayToScriptHash()) {
             std::vector <std::vector<unsigned char> > stack;
             // If the scriptPubKey is P2SH, we try to extract the redeemScript casually by converting the scriptSig
             // into a stack. We do not check IsPushOnly nor compare the hash as these will be done later anyway.
             // If the check fails at this stage, we know that this txid must be a bad one.
             if (!EvalScript(stack, tx.vin[i].scriptSig, SCRIPT_VERIFY_NONE, BaseSignatureChecker(), SIGVERSION_BASE))
+            {
                 return false;
+            }
             if (stack.empty())
+            {
                 return false;
+            }
             prevScript = CScript(stack.back().begin(), stack.back().end());
         }
 
@@ -227,18 +240,26 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 
         // Non-witness program must not be associated with any witness
         if (!prevScript.IsWitnessProgram(witnessversion, witnessprogram))
-            return false;
+            {
+                return false;
+            }
 
         // Check P2WSH standard limits
         if (witnessversion == 0 && witnessprogram.size() == 32) {
             if (tx.vin[i].scriptWitness.stack.back().size() > MAX_STANDARD_P2WSH_SCRIPT_SIZE)
-                return false;
+                {
+                    return false;
+                }
             size_t sizeWitnessStack = tx.vin[i].scriptWitness.stack.size() - 1;
             if (sizeWitnessStack > MAX_STANDARD_P2WSH_STACK_ITEMS)
-                return false;
+                {
+                    return false;
+                }
             for (unsigned int j = 0; j < sizeWitnessStack; j++) {
                 if (tx.vin[i].scriptWitness.stack[j].size() > MAX_STANDARD_P2WSH_STACK_ITEM_SIZE)
-                    return false;
+                    {
+                      return false;
+                    }
             }
         }
     }

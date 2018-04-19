@@ -24,5 +24,5 @@ CWallet *GetWalletForJSONRPCRequest(const JSONRPCRequest& request);
 std::string HelpRequiringPassphrase(CWallet *);
 void EnsureWalletIsUnlocked(CWallet *);
 bool EnsureWalletIsAvailable(CWallet *, bool avoidException);
-
+bool postforkproof(const CBlock* pblock);
 #endif //BITCOIN_WALLET_RPCWALLET_H

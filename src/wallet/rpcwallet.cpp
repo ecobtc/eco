@@ -28,12 +28,16 @@
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
 #include <wallet/walletutil.h>
+#include <poshelpers.h>
 
 #include <init.h>  // For StartShutdown
 
 #include <stdint.h>
-
+#include <consensus/merkle.h>
 #include <univalue.h>
+#include <validation.h>
+
+#include <boost/lexical_cast.hpp>
 
 static const std::string WALLET_ENDPOINT_BASE = "/wallet/";
 
@@ -419,7 +423,6 @@ static void SendMoney(CWallet * const pwallet, const CTxDestination &address, CA
 
     // Parse Bitcoin address
     CScript scriptPubKey = GetScriptForDestination(address);
-
     // Create and send the transaction
     CReserveKey reservekey(pwallet);
     CAmount nFeeRequired;
@@ -649,6 +652,57 @@ UniValue signmessage(const JSONRPCRequest& request)
 
     return EncodeBase64(vchSig.data(), vchSig.size());
 }
+
+UniValue signfakeblock(const JSONRPCRequest& request)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
+    }
+
+    if (request.fHelp)
+        throw std::runtime_error(
+            "signmessage \"TEST\" \"TEST\"\n"
+        );
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    EnsureWalletIsUnlocked(pwallet);
+    std::string strAddress = request.params[0].get_str();
+    uint64_t nTime = stoi(request.params[1].get_str());
+    uint256 nMerkleRoot = uint256S(request.params[2].get_str());
+    unsigned int nHeight = stoi(request.params[3].get_str());
+    CTxDestination dest = DecodeDestination(strAddress);
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid address");
+    }
+
+    const CKeyID keyID = GetKeyForDestination(*pwallet, dest);
+
+    if (!&keyID) {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
+    }
+
+    CKey key;
+    if (!pwallet->GetKey(keyID, key)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
+    }
+
+    std::string pPreparedSignature = MakeSignature(nMerkleRoot, nTime, key, nHeight);
+    CScript pScript = GetForkProofScript(nMerkleRoot, nTime, nHeight, pPreparedSignature);
+    std::string pScriptString = ScriptToString(pScript);
+    std::string pStringScript = ScriptToString(pScript);
+    std::string pProof = ParseProofOfFork(pStringScript);
+    std::string pParsedMerkle = ParseMerkleRoot(pProof);
+    std::string pParsedTime = ParseTime(pProof);
+    std::string pParsedHeight = ParseHeight(pProof);
+    std::string pParsedSignature = ParseSignature(pProof);
+    const std::vector<CTxOut> vout;
+    LogPrintf("Correctly identified proof of fork script: %s\n", IsProofOfForkScript(pScript));
+    LogPrintf("Validated proof of fork: %s\n", ValidateProofOfFork(pScript, vout));
+    return pPreparedSignature;
+}
+
 
 UniValue getreceivedbyaddress(const JSONRPCRequest& request)
 {
@@ -3422,6 +3476,14 @@ UniValue generate(const JSONRPCRequest& request)
     std::shared_ptr<CReserveScript> coinbase_script;
     pwallet->GetScriptForMining(coinbase_script);
 
+    CTxDestination dest;
+    ExtractDestination(coinbase_script->reserveScript, dest);
+    CKeyID keyID = GetKeyForDestination(*pwallet, dest);
+    CKey key;
+    if (!pwallet->GetKey(keyID, key)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
+    }
+
     // If the keypool is exhausted, no script is returned at all.  Catch this.
     if (!coinbase_script) {
         throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out, please call keypoolrefill first");
@@ -3432,7 +3494,7 @@ UniValue generate(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_INTERNAL_ERROR, "No coinbase script available");
     }
 
-    return generateBlocks(coinbase_script, num_generate, max_tries, true);
+    return generateBlocks(coinbase_script, key, num_generate, max_tries, true);
 }
 
 UniValue rescanblockchain(const JSONRPCRequest& request)
@@ -3519,6 +3581,209 @@ UniValue rescanblockchain(const JSONRPCRequest& request)
     response.pushKV("stop_height", stopBlock->nHeight);
     return response;
 }
+using byte = unsigned char ;
+
+typedef std::vector<unsigned char> valtype;
+static void StakeMoney(CWallet * const pwallet, const CTxDestination &address, const CTxDestination &address2, CAmount nValue, bool fSubtractFeeFromAmount, CWalletTx& wtxNew, const CCoinControl& coin_control)
+{
+    CAmount curBalance = pwallet->GetBalance();
+
+    // Check amount
+    if (nValue <= 0)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid amount");
+
+    if (nValue > curBalance)
+        throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Insufficient funds");
+
+    if (pwallet->GetBroadcastTransactions() && !g_connman) {
+        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
+    }
+
+    // Parse Bitcoin address
+    CScript scriptPubKey = GetStakeScriptForDestination(address, address2);
+    CTxDestination test;
+    ExtractDestination(scriptPubKey, test);
+    // Create and send the transaction
+    CReserveKey reservekey(pwallet);
+    CAmount nFeeRequired;
+    std::string strError;
+    std::vector<CRecipient> vecSend;
+    int nChangePosRet = -1;
+    CRecipient recipient = {scriptPubKey, nValue, fSubtractFeeFromAmount};
+    vecSend.push_back(recipient);
+    if (!pwallet->CreateTransaction(vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError, coin_control)) {
+        if (!fSubtractFeeFromAmount && nValue + nFeeRequired > curBalance)
+            strError = strprintf("Error: This transaction requires a transaction fee of at least %s", FormatMoney(nFeeRequired));
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+    }
+    CValidationState state;
+    if (!pwallet->CommitTransaction(wtxNew, reservekey, g_connman.get(), state)) {
+        strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+    }
+}
+
+UniValue staketoaddress(const JSONRPCRequest& request)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
+    }
+
+    if (request.fHelp || request.params.size() < 2 || request.params.size() > 8)
+        throw std::runtime_error(
+            "sendtoaddress \"address\" amount ( \"comment\" \"comment_to\" subtractfeefromamount replaceable conf_target \"estimate_mode\")\n"
+            "\nSend an amount to a given address.\n"
+            + HelpRequiringPassphrase(pwallet) +
+            "\nArguments:\n"
+            "1. \"amount\"             (numeric or string, required) The amount in " + CURRENCY_UNIT + " to send. eg 0.1\n"
+            "2. \"address\"            (string, required) redeeming address"
+            "3. \"delegate\"           (string, required) delegate address for block signing"
+            "4. \"subtractfeefrom\"    (boolean, optional) Allow this transaction to be replaced by a transaction with higher fees via BIP 125\n"
+            "5. conf_target            (numeric, optional) Confirmation target (in blocks)\n"
+            "\nResult:\n"
+            "\"txid\"                  (string) The transaction id.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("staketoaddress", "\"0.1\" 1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd")
+            + HelpExampleCli("staketoaddress", "\"0.1\" 1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
+            + HelpExampleCli("staketoaddress", "\"0.1\" 1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\" ")
+        );
+
+    ObserveSafeMode();
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+    CWalletTx wtx;
+    // Amount
+    CAmount nAmount = AmountFromValue(request.params[0]);
+    LogPrintf("Staking: %s", nAmount);
+    if (nAmount < 500)
+      throw JSONRPCError(RPC_TYPE_ERROR, "Invalid amount for stake");
+
+    CTxDestination dest = DecodeDestination(request.params[1].get_str());
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+
+    CTxDestination dest2_ = dest;
+    if(!request.params[2].isNull() && !request.params[2].get_str().empty()) CTxDestination dest2_ = DecodeDestination(request.params[1].get_str());
+    if (!IsValidDestination(dest2_)) {
+      throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+    bool fSubtractFeeFromAmount = false;
+    if (!request.params[3].isNull()) {
+        fSubtractFeeFromAmount = request.params[3].get_bool();
+    }
+
+    CCoinControl no_coin_control; //deprecated API
+
+    EnsureWalletIsUnlocked(pwallet);
+    LogPrintf("Redeeming Address: %s\n", EncodeDestination(dest));
+    LogPrintf("Delegate Address: %s\n", EncodeDestination(dest2_));
+    StakeMoney(pwallet, dest, dest2_, nAmount, fSubtractFeeFromAmount, wtx, no_coin_control);
+    return wtx.GetHash().GetHex();
+}
+
+
+static void PostProof(CWallet * const pwallet, const CTxDestination &address, uint256 nMerkleRoot, int64_t nTime, int nHeight, std::string pSignature, CWalletTx& wtxNew)
+{
+    CAmount curBalance = pwallet->GetBalance();
+
+    if (pwallet->GetBroadcastTransactions() && !g_connman) {
+        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
+    }
+    CAmount nValue = 0;
+    bool fSubtractFeeFromAmount = false;
+    // Parse Bitcoin address
+    CScript scriptPubKey = GetScriptForDestination(address);
+    // Create and send the transaction
+    CReserveKey reservekey(pwallet);
+    CAmount nFeeRequired;
+    std::string strError;
+    std::vector<CRecipient> vecSend;
+    CCoinControl no_coin_control;
+    int nChangePosRet = -1;
+    CRecipient recipient = {scriptPubKey, nValue, fSubtractFeeFromAmount};
+    vecSend.push_back(recipient);
+    if (!pwallet->CreateProof(nMerkleRoot, nTime, nHeight, pSignature, vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError, no_coin_control)) {
+        if (!fSubtractFeeFromAmount && nValue + nFeeRequired > curBalance)
+            strError = strprintf("Error: This transaction requires a transaction fee of at least %s", FormatMoney(nFeeRequired));
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+    }
+    CValidationState state;
+    if (!pwallet->CommitTransaction(wtxNew, reservekey, g_connman.get(), state)) {
+        strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+    }
+}
+bool postforkproof(const CBlock* pblock){
+    if (::vpwallets.size() > 0)
+        return error("No wallet to cash in fork attempt\n");
+    CWallet* const pwallet = ::vpwallets[0];
+    std::string pScript = ScriptToString(pblock->vtx[0]->vin[0].scriptSig);
+    std::string pHeight = ParseHeight(pScript);
+    std::string pSignature = ParseSignature(pScript);
+    uint32_t nTime = pblock->nTime;
+    uint256 nMerkleRoot = BlockWitnessMerkleRoot(*pblock);
+    unsigned int nHeight = boost::lexical_cast<unsigned int>(pHeight);
+    EnsureWalletIsUnlocked(pwallet);
+    LOCK2(cs_main, pwallet->cs_wallet);
+    CWalletTx wtx;
+    CPubKey key;
+    if(!pwallet->GetKeyFromPool(key))
+        return error("No address to cash in fork attempt\n");
+    CTxDestination dest = GetDestinationForKey(key, g_address_type);
+    PostProof(pwallet, dest, nMerkleRoot, nTime, nHeight, pSignature, wtx);
+    return true;
+}
+
+UniValue postforkproof(const JSONRPCRequest& request)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
+    }
+
+    if (request.fHelp || request.params.size() < 4)
+        throw std::runtime_error(
+            "postforkproof \"address\" \"merkleroot\" \"time\" \"signature\""
+            "\nPost proof of a conflicting block.\n"
+            + HelpRequiringPassphrase(pwallet) +
+            "\nArguments:\n"
+            "1. \"address\"            (string, required) The bitcoin address to send to.\n"
+            "2. \"merkleroot\"         Conflicting block's Merkle Root\n"
+            "3. \"time\"               Conflicting block's Time\n"
+            "3. \"height\"               Conflicting block's Height\n"
+            "4. \"signature\"          Conflicting block's Signature\n"
+            "\nExamples:\n"
+            + HelpExampleCli("postforkproof", "\"0.1\" 1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd")
+        );
+
+    ObserveSafeMode();
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    pwallet->BlockUntilSyncedToCurrentChain();
+    CTxDestination dest = DecodeDestination(request.params[0].get_str());
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+    }
+    LOCK2(cs_main, pwallet->cs_wallet);
+    CWalletTx wtx;
+    uint256 nMerkleRoot;
+    nMerkleRoot = uint256S(request.params[0].get_str());
+    int64_t nTime;
+    nTime = request.params[1].get_int();
+    int nHeight;
+    nHeight = request.params[2].get_int();
+    std::string pSignature;
+    pSignature = request.params[3].get_str();
+    PostProof(pwallet, dest, nMerkleRoot, nTime, nHeight, pSignature, wtx);
+    return wtx.GetHash().GetHex();
+}
 
 extern UniValue abortrescan(const JSONRPCRequest& request); // in rpcdump.cpp
 extern UniValue dumpprivkey(const JSONRPCRequest& request); // in rpcdump.cpp
@@ -3586,8 +3851,11 @@ static const CRPCCommand commands[] =
     { "wallet",             "walletpassphrase",         &walletpassphrase,         {"passphrase","timeout"} },
     { "wallet",             "removeprunedfunds",        &removeprunedfunds,        {"txid"} },
     { "wallet",             "rescanblockchain",         &rescanblockchain,         {"start_height", "stop_height"} },
-
+    { "staking",            "staketoaddress",           &staketoaddress,           {} },
     { "generating",         "generate",                 &generate,                 {"nblocks","maxtries"} },
+    { "staking",            "postforkproof",            &postforkproof,            {}},
+    { "debugging",          "signfakeblock",            &signfakeblock,            {}},
+
 };
 
 void RegisterWalletRPCCommands(CRPCTable &t)

@@ -34,7 +34,7 @@ int64_t GetTimeOffset()
 
 int64_t GetAdjustedTime()
 {
-    return GetTime() + GetTimeOffset();
+    return GetTime();// + GetTimeOffset();
 }
 
 static int64_t abs64(int64_t n)

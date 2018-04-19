@@ -5,9 +5,11 @@
 DIST_SUBDIRS = secp256k1 univalue
 
 AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(HARDENED_LDFLAGS)
-AM_CXXFLAGS = $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS)
+AM_CXXFLAGS = $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS) -fPIC
 AM_CPPFLAGS = $(HARDENED_CPPFLAGS)
 EXTRA_LIBRARIES =
+
+CXXFLAGS = -fPIC
 
 if EMBEDDED_UNIVALUE
 LIBUNIVALUE = univalue/libunivalue.la
@@ -75,6 +77,7 @@ endif
 .PHONY: FORCE check-symbols check-security
 # bitcoin core #
 BITCOIN_CORE_H = \
+	poshelpers.h \
   addrdb.h \
   addrman.h \
   base58.h \
@@ -95,7 +98,6 @@ BITCOIN_CORE_H = \
   compat/sanity.h \
   compressor.h \
   consensus/consensus.h \
-  consensus/tx_verify.h \
   core_io.h \
   core_memusage.h \
   cuckoocache.h \
@@ -122,16 +124,20 @@ BITCOIN_CORE_H = \
   policy/policy.h \
   policy/rbf.h \
   pow.h \
+	pos.h \
   protocol.h \
   random.h \
   reverse_iterator.h \
   reverselock.h \
+	consensus/consensus.h \
   rpc/blockchain.h \
+	consensus/tx_verify.h \
   rpc/client.h \
   rpc/mining.h \
   rpc/protocol.h \
   rpc/safemode.h \
   rpc/server.h \
+	rpc/staking.h \
   rpc/register.h \
   rpc/util.h \
   scheduler.h \
@@ -187,13 +193,14 @@ libbitcoin_util_a-clientversion.$(OBJEXT): obj/build.h
 libbitcoin_server_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(MINIUPNPC_CPPFLAGS) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS)
 libbitcoin_server_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_server_a_SOURCES = \
+	poshelpers.cpp \
   addrdb.cpp \
   addrman.cpp \
   bloom.cpp \
   blockencodings.cpp \
   chain.cpp \
   checkpoints.cpp \
-  consensus/tx_verify.cpp \
+	chainparams.cpp \
   httprpc.cpp \
   httpserver.cpp \
   init.cpp \
@@ -207,9 +214,12 @@ libbitcoin_server_a_SOURCES = \
   policy/policy.cpp \
   policy/rbf.cpp \
   pow.cpp \
+	pos.cpp \
   rest.cpp \
+	consensus/tx_verify.cpp \
   rpc/blockchain.cpp \
   rpc/mining.cpp \
+	rpc/staking.cpp \
   rpc/misc.cpp \
   rpc/net.cpp \
   rpc/rawtransaction.cpp \
@@ -281,39 +291,42 @@ crypto_libbitcoin_crypto_a_SOURCES += crypto/sha256_sse4.cpp
 endif
 
 # consensus: shared between all executables that validate any consensus rules.
-libbitcoin_consensus_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_consensus_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_consensus_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) -fPIC
+libbitcoin_consensus_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) -fPIC
 libbitcoin_consensus_a_SOURCES = \
-  amount.h \
-  arith_uint256.cpp \
-  arith_uint256.h \
-  consensus/merkle.cpp \
-  consensus/merkle.h \
-  consensus/params.h \
-  consensus/validation.h \
-  hash.cpp \
-  hash.h \
-  prevector.h \
-  primitives/block.cpp \
-  primitives/block.h \
-  primitives/transaction.cpp \
-  primitives/transaction.h \
-  pubkey.cpp \
-  pubkey.h \
-  script/bitcoinconsensus.cpp \
-  script/interpreter.cpp \
-  script/interpreter.h \
-  script/script.cpp \
-  script/script.h \
-  script/script_error.cpp \
-  script/script_error.h \
-  serialize.h \
-  tinyformat.h \
-  uint256.cpp \
-  uint256.h \
-  utilstrencodings.cpp \
-  utilstrencodings.h \
-  version.h
+	poshelpers.h \
+	poshelpers.cpp \
+	amount.h \
+	arith_uint256.cpp \
+	arith_uint256.h \
+	consensus/merkle.cpp \
+	consensus/merkle.h \
+	consensus/params.h \
+	consensus/validation.h \
+	hash.cpp \
+	hash.h \
+	prevector.h \
+	primitives/block.cpp \
+	primitives/block.h \
+	primitives/transaction.cpp \
+	primitives/transaction.h \
+	pubkey.cpp \
+	pubkey.h \
+	script/bitcoinconsensus.cpp \
+	script/interpreter.cpp \
+	script/interpreter.h \
+	script/script.cpp \
+	script/script.h \
+	script/script_error.cpp \
+	script/script_error.h \
+	serialize.h \
+	tinyformat.h \
+	uint256.cpp \
+	uint256.h \
+	utilstrencodings.cpp \
+	utilstrencodings.h \
+	version.h
+
 
 # common: shared between bitcoind, and bitcoin-qt and non-server tools
 libbitcoin_common_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)

@@ -181,7 +181,12 @@ enum opcodetype
     OP_NOP9 = 0xb8,
     OP_NOP10 = 0xb9,
 
-
+    // POS Contract
+    OP_STAKE = 0xba,
+    OP_UNSTAKE = 0xbb,
+    OP_SHOW_VIOLATION = 0xbb,
+    OP_DELEGATE = 0xbc,
+    OP_CHECKPROOF = 0xbd,
     // template matching params
     OP_SMALLINTEGER = 0xfa,
     OP_PUBKEYS = 0xfb,

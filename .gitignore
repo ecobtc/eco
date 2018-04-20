@@ -8,7 +8,14 @@ src/bitcoin-tx
 src/test/test_bitcoin
 src/test/test_bitcoin_fuzzy
 src/qt/test/test_bitcoin-qt
-
+test/a/
+test/b/
+test/c/
+test/d/
+test/a/*
+test/b/*
+test/c/*
+test/d/*
 # autoreconf
 Makefile.in
 aclocal.m4

@@ -46,7 +46,7 @@ tmux send-keys "./3.sh" C-m
 tmux selectp -t 4
 tmux send-keys "./4.sh" C-m
 tmux selectp -t 0
-tmux send-keys "./prepare.sh" C-m
+# tmux send-keys "./prepare.sh" C-m
 
 # create a new window called scratch
 #tmux new-window -t $session:1 -n scratch

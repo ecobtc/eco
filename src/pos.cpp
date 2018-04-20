@@ -37,15 +37,14 @@
 #include <boost/random.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/discrete_distribution.hpp>
-#include <tinyxml2.h>
-#include <restclient-cpp/restclient.h>
-
+#include <curl/curl.h>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/algorithm.hpp>
 #include <boost/algorithm/string.hpp>
 #include <string.h>
 #include <wallet/wallet.h>
+#include <hash.h>
 
 #include <poshelpers.h>
 
@@ -111,9 +110,42 @@ static bool GetUTXOLotto(CCoinsView *view, CCoinsLotto &lotto)
     return true;
 }
 
+size_t writeFunction(void *ptr, size_t size, size_t nmemb, std::string* data) {
+    data->append((char*) ptr, size * nmemb);
+    return size * nmemb;
+}
 bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
 {
     FlushStateToDisk();
+    auto curl = curl_easy_init();
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, "https://google.com");
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "curl/7.42.0");
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 50L);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+
+        std::string response_string;
+        std::string header_string;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &header_string);
+
+        char* url;
+        long response_code;
+        double elapsed;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &elapsed);
+        curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &url);
+
+        curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+        curl = NULL;
+        LogPrintf("RESPONSE STRING: %s\n", response_string);
+        uint256 hash = (CHashWriter(SER_GETHASH, 0) << response_string).GetHash();
+        LogPrintf("hash: %s\n", hash.ToString());
+    }
+    /*
     double nRunningAmount = 0;
     tinyxml2::XMLDocument xmlDoc;
     RestClient::Response response = RestClient::get("http://localhost:5000/"+boost::lexical_cast<std::string>(timestamp));
@@ -157,6 +189,7 @@ bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
             }
         }
     }
+    */
     return true;
 }
 

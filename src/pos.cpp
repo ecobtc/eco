@@ -37,8 +37,6 @@
 #include <boost/random.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/discrete_distribution.hpp>
-#include <tinyxml2.h>
-#include <restclient-cpp/restclient.h>
 
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/algorithm/hex.hpp>
@@ -48,6 +46,9 @@
 #include <wallet/wallet.h>
 
 #include <poshelpers.h>
+#include <crypto/sha512.h>
+
+#include "uccurl.h"
 
 static void FindLuckyCoin (CCoinsLotto &lotto, CHashWriter& ss, const uint256& hash, const std::map<uint32_t, Coin>& outputs)
 {
@@ -115,30 +116,18 @@ bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
 {
     FlushStateToDisk();
     double nRunningAmount = 0;
-    tinyxml2::XMLDocument xmlDoc;
-    RestClient::Response response = RestClient::get("http://localhost:5000/"+boost::lexical_cast<std::string>(timestamp));
-    xmlDoc.Parse(response.body.c_str());
-    if (&xmlDoc == nullptr) return false;
-    tinyxml2::XMLNode * pRoot = xmlDoc.LastChild();
-    if (pRoot == nullptr) return false;
-    tinyxml2::XMLElement * pOutputValue = pRoot->FirstChildElement("outputValue");
-    tinyxml2::XMLElement * pTimeStamp = pRoot->FirstChildElement("timeStamp");
-    if (pOutputValue == nullptr)
-    {
-        LogPrintf("Couldn't get outputValue");
+    std::string pDataRaw; // = pOutputValue->FirstChild()->Value();
+    try {
+        uc::curl::easy("https://cdn.star.nesdis.noaa.gov/GOES16/ABI/CONUS/16/latest.jpg") >> pDataRaw;
+    } catch (std::exception& ex) {
+        std::cerr << "exception : " << ex.what() << std::endl;
         return false;
     }
-    if (pTimeStamp == nullptr) return false;
-    lotto.nTimeStamp = boost::lexical_cast<time_t>(pTimeStamp->FirstChild()->Value());
-    std::string pTextRaw = pOutputValue->FirstChild()->Value();
-    boost::algorithm::to_lower(pTextRaw);
-    std::stringstream ss;
-    ss << std::hex << pTextRaw;
-    boost::multiprecision::uint512_t random;
-    ss >> random;
-    std::string ranText = boost::lexical_cast<std::string>(random);
-    ranText = ranText.substr(0,16);
-    long randomInt = boost::lexical_cast<long>(ranText);
+    CSHA512 hasher;
+    unsigned char sha512hash[64];
+    hasher.Write((const unsigned char*)pDataRaw.c_str(), pDataRaw.length()).Finalize(&sha512hash[0]);
+    uint64_t randomInt;
+    memcpy(&randomInt, &sha512hash[0], sizeof(uint64_t));
     boost::random::mt19937 engine(randomInt);
     boost::function<double()> randu = boost::bind(boost::random::uniform_real_distribution<>(0, 1), engine);
     lotto.nLuckyCoin = static_cast<double>(randu());

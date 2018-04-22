@@ -40,9 +40,7 @@
 #include <boost/random.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/discrete_distribution.hpp>
-#include <restclient-cpp/restclient.h>
 
-#include <tinyxml2.h>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/algorithm.hpp>

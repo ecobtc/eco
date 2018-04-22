@@ -120,6 +120,7 @@ size_t writeFunction(void *ptr, size_t size, size_t nmemb, std::string* data) {
 bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
 {
     FlushStateToDisk();
+    double nRunningAmount = 0;
     std::string pDataRaw; // = pOutputValue->FirstChild()->Value();
     try {
         uc::curl::easy("https://cdn.star.nesdis.noaa.gov/GOES16/ABI/CONUS/16/latest.jpg") >> pDataRaw;

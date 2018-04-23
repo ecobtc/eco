@@ -37,7 +37,7 @@
 #include <boost/random.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/discrete_distribution.hpp>
-#include <curl/curl.h>
+
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/algorithm.hpp>
@@ -47,6 +47,9 @@
 #include <hash.h>
 
 #include <poshelpers.h>
+#include <crypto/sha512.h>
+
+#include "uccurl.h"
 
 static void FindLuckyCoin (CCoinsLotto &lotto, CHashWriter& ss, const uint256& hash, const std::map<uint32_t, Coin>& outputs)
 {
@@ -117,80 +120,38 @@ size_t writeFunction(void *ptr, size_t size, size_t nmemb, std::string* data) {
 bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
 {
     FlushStateToDisk();
-    auto curl = curl_easy_init();
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, "https://goes.gsfc.nasa.gov/goescolor/goeswest/pacific2/color_lrg/latest.jpg");
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "curl/7.42.0");
-        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 50L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-
-        std::string response_string;
-        std::string header_string;
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
-        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &header_string);
-
-        char* url;
-        long response_code;
-        double elapsed;
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &elapsed);
-        curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &url);
-
-        curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-        curl = NULL;
-        uint256 hash = (CHashWriter(SER_GETHASH, 0) << response_string).GetHash();
-        LogPrintf("hash: %s\n", hash.ToString());
-        uint64_t randomInt = hash.GetCheapHash();
-        boost::random::mt19937 engine(randomInt);
-        boost::function<double()> randu = boost::bind(boost::random::uniform_real_distribution<>(0, 1), engine);
-        lotto.nLuckyCoin = static_cast<double>(randu());
-        LogPrintf("Lucky Coin: %s\n", lotto.nLuckyCoin);
-        double nRunningAmount = 0;
-        if (GetUTXOLotto(pcoinsdbview.get(), lotto)) {
-          if (!lotto.nWallets.empty())
-          {
-              lotto.nLuckyAddress = DecodeDestination(lotto.nWallets.begin()->first);
-              nRunningAmount = lotto.nLuckyCoin;
-              for(const auto wallet : lotto.nWallets){
-                  const double probability = wallet.second/static_cast<double>(lotto.nTotalAmount);
-                  if (nRunningAmount < probability){
-                      lotto.nLuckyAddress = DecodeDestination(wallet.first);
-                      return true;
-                  }
-                  nRunningAmount -= probability;
-                }
-            }
-        }
-        return true;
-    }
-    /*
-    tinyxml2::XMLDocument xmlDoc;
-    RestClient::Response response = RestClient::get("http://localhost:5000/"+boost::lexical_cast<std::string>(timestamp));
-    xmlDoc.Parse(response.body.c_str());
-    if (&xmlDoc == nullptr) return false;
-    tinyxml2::XMLNode * pRoot = xmlDoc.LastChild();
-    if (pRoot == nullptr) return false;
-    tinyxml2::XMLElement * pOutputValue = pRoot->FirstChildElement("outputValue");
-    tinyxml2::XMLElement * pTimeStamp = pRoot->FirstChildElement("timeStamp");
-    if (pOutputValue == nullptr)
-    {
-        LogPrintf("Couldn't get outputValue");
+    double nRunningAmount = 0;
+    std::string pDataRaw; // = pOutputValue->FirstChild()->Value();
+    try {
+        uc::curl::easy("https://cdn.star.nesdis.noaa.gov/GOES16/ABI/CONUS/16/latest.jpg") >> pDataRaw;
+    } catch (std::exception& ex) {
+        std::cerr << "exception : " << ex.what() << std::endl;
         return false;
     }
-    if (pTimeStamp == nullptr) return false;
-    lotto.nTimeStamp = boost::lexical_cast<time_t>(pTimeStamp->FirstChild()->Value());
-    std::string pTextRaw = pOutputValue->FirstChild()->Value();
-    boost::algorithm::to_lower(pTextRaw);
-    std::stringstream ss;
-    ss << std::hex << pTextRaw;
-    boost::multiprecision::uint512_t random;
-    ss >> random;
-    std::string ranText = boost::lexical_cast<std::string>(random);
-    ranText = ranText.substr(0,16);
-    */
+    CSHA512 hasher;
+    unsigned char sha512hash[64];
+    hasher.Write((const unsigned char*)pDataRaw.c_str(), pDataRaw.length()).Finalize(&sha512hash[0]);
+    uint64_t randomInt;
+    memcpy(&randomInt, &sha512hash[0], sizeof(uint64_t));
+    boost::random::mt19937 engine(randomInt);
+    boost::function<double()> randu = boost::bind(boost::random::uniform_real_distribution<>(0, 1), engine);
+    lotto.nLuckyCoin = static_cast<double>(randu());
+    if (GetUTXOLotto(pcoinsdbview.get(), lotto)) {
+        if (!lotto.nWallets.empty())
+        {
+            lotto.nLuckyAddress = DecodeDestination(lotto.nWallets.begin()->first);
+            nRunningAmount = lotto.nLuckyCoin;
+            for(const auto wallet : lotto.nWallets){
+                const double probability = wallet.second/static_cast<double>(lotto.nTotalAmount);
+                if (nRunningAmount < probability){
+                    lotto.nLuckyAddress = DecodeDestination(wallet.first);
+                    return true;
+                }
+                nRunningAmount -= probability;
+            }
+        }
+    }
+    return true;
 }
 
 

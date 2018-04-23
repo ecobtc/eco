@@ -167,7 +167,7 @@ public:
     // Block (dis)connection on a given view:
     DisconnectResult DisconnectBlock(const CBlock& block, const CBlockIndex* pindex, CCoinsViewCache& view);
     bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex,
-                    CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck = false);
+                    CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck = false, bool fCheckPow = true);
 
     // Block disconnection on our pcoinsTip:
     bool DisconnectTip(CValidationState& state, const CChainParams& chainparams, DisconnectedBlockTransactions *disconnectpool);
@@ -1096,7 +1096,7 @@ static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMes
     return true;
 }
 
-bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams, bool checkStake)
+bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams)
 {
     block.SetNull();
 
@@ -1114,17 +1114,10 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus:
     }
 
     // Check the header
-    if(checkStake){
-        if (!CheckProofOfStake(&block, consensusParams))
-        {
-            LogPrintf("Proof of stake failed!\n");
-            return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
-        }
-    }
     return true;
 }
 
-bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams, bool checkStake)
+bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams)
 {
     CDiskBlockPos blockPos;
     {
@@ -1325,7 +1318,7 @@ bool CheckProofInBlockchain(CScript script, CTxDestination dest)
     CBlockIndex* pblockindex;
     for (uint i = 0; i < nHeight; i++){
         pblockindex = chainActive[i];
-        if(!ReadBlockFromDisk(block, pblockindex, GetParams(), false)){
+        if(!ReadBlockFromDisk(block, pblockindex, GetParams())){
           LogPrintf("Couldn't read block from disk\n");
           return false;
         }
@@ -1437,7 +1430,7 @@ bool CheckSignatureIsUnique(std::string pSignature, unsigned int nHeight)
     for (unsigned int i = 0; i < nHeight;i++){
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
-        if(!ReadBlockFromDisk(block, pblockindex, GetParams(), false)){
+        if(!ReadBlockFromDisk(block, pblockindex, GetParams())){
           LogPrintf("Couldn't read block from disk\n");
           return false;
         }
@@ -1459,7 +1452,7 @@ bool ValidateProofOfFork(CScript scriptSig, const std::vector<CTxOut> vout)
     if(nHeight > (unsigned int) chainActive.Height()) return false;
     CBlockIndex* pblockindex = chainActive[nHeight];
     CBlock block;
-    if(!ReadBlockFromDisk(block, pblockindex, GetParams(), false)){
+    if(!ReadBlockFromDisk(block, pblockindex, GetParams())){
         LogPrintf("Couldn't read block from disk\n");
         return false;
     }
@@ -1939,7 +1932,7 @@ static int64_t nBlocksTotal = 0;
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
  *  can fail if those validity checks fail (among other reasons). */
 bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex,
-                  CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck)
+                  CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck, bool fCheckPOS)
 {
     AssertLockHeld(cs_main);
     assert(pindex);
@@ -1961,7 +1954,7 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     // is enforced in ContextualCheckBlockHeader(); we wouldn't want to
     // re-enforce that rule here (at least until we make it impossible for
     // GetAdjustedTime() to go backward).
-    if (!CheckBlock(block, state, chainparams.GetConsensus(), !fJustCheck, !fJustCheck))
+    if (!CheckBlock(block, state, chainparams.GetConsensus(), (!fJustCheck && fCheckPOS), !fJustCheck))
         return error("%s: Consensus::CheckBlock: %s", __func__, FormatStateMessage(state));
 
     // verify that the view's current state corresponds to the previous block
@@ -2511,7 +2504,7 @@ bool CChainState::ConnectTip(CValidationState& state, const CChainParams& chainp
     LogPrint(BCLog::BENCH, "  - Load block from disk: %.2fms [%.2fs]\n", (nTime2 - nTime1) * MILLI, nTimeReadFromDisk * MICRO);
     {
         CCoinsViewCache view(pcoinsTip.get());
-        bool rv = ConnectBlock(blockConnecting, state, pindexNew, view, chainparams);
+        bool rv = ConnectBlock(blockConnecting, state, pindexNew, view, chainparams, false, false);
         GetMainSignals().BlockChecked(blockConnecting, state);
         if (!rv) {
             if (state.IsInvalid())
@@ -3123,7 +3116,8 @@ static bool FindUndoPos(CValidationState &state, int nFile, CDiskBlockPos &pos, 
 static bool CheckBlockHeader(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
     // Check proof of work matches claimed amount
-    if (fCheckPOW && !CheckProofOfStake(&block, consensusParams))
+    if (fCheckPOW)
+        if(!CheckProofOfStake(&block, consensusParams))
         return state.DoS(50, false, REJECT_INVALID, "bad-stake", false, "proof of stake failed");
 
     return true;
@@ -3637,7 +3631,7 @@ bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams,
         return error("%s: Consensus::CheckBlock: %s", __func__, FormatStateMessage(state));
     if (!ContextualCheckBlock(block, state, chainparams.GetConsensus(), pindexPrev))
         return error("%s: Consensus::ContextualCheckBlock: %s", __func__, FormatStateMessage(state));
-    if (!g_chainstate.ConnectBlock(block, state, &indexDummy, viewNew, chainparams, true))
+    if (!g_chainstate.ConnectBlock(block, state, &indexDummy, viewNew, chainparams, true, fCheckPOW))
         return false;
     assert(state.IsValid());
 
@@ -4051,7 +4045,7 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
         if (!ReadBlockFromDisk(block, pindex, chainparams.GetConsensus()))
             return error("VerifyDB(): *** ReadBlockFromDisk failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
         // check level 1: verify block validity
-        if (nCheckLevel >= 1 && !CheckBlock(block, state, chainparams.GetConsensus()))
+        if (nCheckLevel >= 1 && !CheckBlock(block, state, chainparams.GetConsensus(), false))
             return error("%s: *** found bad block at %d, hash=%s (%s)\n", __func__,
                          pindex->nHeight, pindex->GetBlockHash().ToString(), FormatStateMessage(state));
         // check level 2: verify undo validity
@@ -4094,8 +4088,8 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
             CBlock block;
             if (!ReadBlockFromDisk(block, pindex, chainparams.GetConsensus()))
                 return error("VerifyDB(): *** ReadBlockFromDisk failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
-            if (!g_chainstate.ConnectBlock(block, state, pindex, coins, chainparams))
-                return error("VerifyDB(): *** found unconnectable block at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
+            if (!g_chainstate.ConnectBlock(block, state, pindex, coins, chainparams, false, false))
+                return error("VerifyDB(): *** found unconnectable block at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString(), false, false);
         }
     }
 

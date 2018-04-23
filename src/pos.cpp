@@ -119,7 +119,7 @@ bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
     FlushStateToDisk();
     auto curl = curl_easy_init();
     if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, "https://google.com");
+        curl_easy_setopt(curl, CURLOPT_URL, "https://goes.gsfc.nasa.gov/goescolor/goeswest/pacific2/color_lrg/latest.jpg");
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "curl/7.42.0");
         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 50L);
@@ -141,12 +141,32 @@ bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
         curl_easy_perform(curl);
         curl_easy_cleanup(curl);
         curl = NULL;
-        LogPrintf("RESPONSE STRING: %s\n", response_string);
         uint256 hash = (CHashWriter(SER_GETHASH, 0) << response_string).GetHash();
         LogPrintf("hash: %s\n", hash.ToString());
+        uint64_t randomInt = hash.GetCheapHash();
+        boost::random::mt19937 engine(randomInt);
+        boost::function<double()> randu = boost::bind(boost::random::uniform_real_distribution<>(0, 1), engine);
+        lotto.nLuckyCoin = static_cast<double>(randu());
+        LogPrintf("Lucky Coin: %s\n", lotto.nLuckyCoin);
+        double nRunningAmount = 0;
+        if (GetUTXOLotto(pcoinsdbview.get(), lotto)) {
+          if (!lotto.nWallets.empty())
+          {
+              lotto.nLuckyAddress = DecodeDestination(lotto.nWallets.begin()->first);
+              nRunningAmount = lotto.nLuckyCoin;
+              for(const auto wallet : lotto.nWallets){
+                  const double probability = wallet.second/static_cast<double>(lotto.nTotalAmount);
+                  if (nRunningAmount < probability){
+                      lotto.nLuckyAddress = DecodeDestination(wallet.first);
+                      return true;
+                  }
+                  nRunningAmount -= probability;
+                }
+            }
+        }
+        return true;
     }
     /*
-    double nRunningAmount = 0;
     tinyxml2::XMLDocument xmlDoc;
     RestClient::Response response = RestClient::get("http://localhost:5000/"+boost::lexical_cast<std::string>(timestamp));
     xmlDoc.Parse(response.body.c_str());
@@ -170,27 +190,7 @@ bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
     ss >> random;
     std::string ranText = boost::lexical_cast<std::string>(random);
     ranText = ranText.substr(0,16);
-    long randomInt = boost::lexical_cast<long>(ranText);
-    boost::random::mt19937 engine(randomInt);
-    boost::function<double()> randu = boost::bind(boost::random::uniform_real_distribution<>(0, 1), engine);
-    lotto.nLuckyCoin = static_cast<double>(randu());
-    if (GetUTXOLotto(pcoinsdbview.get(), lotto)) {
-        if (!lotto.nWallets.empty())
-        {
-            lotto.nLuckyAddress = DecodeDestination(lotto.nWallets.begin()->first);
-            nRunningAmount = lotto.nLuckyCoin;
-            for(const auto wallet : lotto.nWallets){
-                const double probability = wallet.second/static_cast<double>(lotto.nTotalAmount);
-                if (nRunningAmount < probability){
-                    lotto.nLuckyAddress = DecodeDestination(wallet.first);
-                    return true;
-                }
-                nRunningAmount -= probability;
-            }
-        }
-    }
     */
-    return true;
 }
 
 

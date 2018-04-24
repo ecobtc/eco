@@ -7,15 +7,20 @@ rpc_password = 'admin'
 rpc_port = ['8334','8335','8336','8337']
 node_list = []
 
-def generate_blockchain(node_list):
-    for x in range(25):
+def generate_blockchain(node_list, limit):
+    height = 0
+    while height < limit:
         for node in node_list:
+            old_height = height
             try:
                 node.generate_blockchain_for_address_list()
+                height = int(node.getblockcount())
             except KeyboardInterrupt:
                 exit()
             except:
+                height = old_height
                 node.connect()
+            print(height)
     return node_list
 
 def generate_stake(node):
@@ -39,12 +44,10 @@ for port in rpc_port:
 for node in node_list:
     node.generate_address_list(5)
 
-node_list = generate_blockchain(node_list)
+node_list = generate_blockchain(node_list, 500)
 
 node_list = generate_stakes(node_list)
 
 node_list = generate_stakes(node_list)
 
-node_list = generate_stakes(node_list)
-
-node_list = generate_blockchain(node_list)
+node_list = generate_blockchain(node_list, 1000)

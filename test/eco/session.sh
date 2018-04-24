@@ -19,7 +19,7 @@ tmux new-session -d -s $session #"vim -S ~/.vim/sessions/kittybusiness"
 tmux selectp -t 0
 
 # Split pane 1 horizontal by 65%, start redis-server
-tmux splitw -h -p 65
+tmux splitw -h -p 30
 
 # Select pane 2
 tmux selectp -t 1

@@ -474,7 +474,7 @@ bool IsValidDestination(const CTxDestination& dest) {
     return dest.which() != 0;
 }
 
-std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigned int nHeight)
+std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigned int nHeight, uint64_t randomInt)
 {
   std::string pAddressSignature;
   CHashWriter ss(SER_GETHASH, 0);
@@ -486,6 +486,6 @@ std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigne
   return "";
   LogPrintf("Signature Hash: %s\n", ss.GetHash().ToString());
   pAddressSignature = EncodeBase64(vchSig.data(), vchSig.size());
-  pAddressSignature = "startsig" + pAddressSignature + "endsigstartheight"+ EncodeBase64(boost::lexical_cast<std::string>(nHeight)) +"endheight";
+  pAddressSignature = "startsig" + pAddressSignature + "endsigstartheight"+ EncodeBase64(boost::lexical_cast<std::string>(nHeight)) +"endheightstartnrandint" + EncodeBase64(boost::lexical_cast<std::string>(randomInt)) + "endnrandint";
   return pAddressSignature;
 }

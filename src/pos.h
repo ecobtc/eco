@@ -21,7 +21,7 @@ struct CCoinsLotto
 
 };
 
-bool GetLotto(time_t timestamp, CCoinsLotto &lotto);
+bool GetLotto(time_t timestamp, CCoinsLotto &lotto, uint64_t randomInt = 0);
 bool CheckProofOfStake(const CBlock *pcblock, const Consensus::Params& params);
 unsigned int GetPrevBlockHeight(CBlock *pblock);
 CTxDestination ExtractDestinationFromSignature(CScript scriptSig, uint256 merkleRoot, uint32_t nTime, unsigned int nHeight);

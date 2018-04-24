@@ -688,7 +688,7 @@ UniValue signfakeblock(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
     }
 
-    std::string pPreparedSignature = MakeSignature(nMerkleRoot, nTime, key, nHeight);
+    std::string pPreparedSignature = MakeSignature(nMerkleRoot, nTime, key, nHeight, GetRandomInt());
     CScript pScript = GetForkProofScript(nMerkleRoot, nTime, nHeight, pPreparedSignature);
     std::string pScriptString = ScriptToString(pScript);
     std::string pStringScript = ScriptToString(pScript);

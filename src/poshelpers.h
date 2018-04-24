@@ -13,4 +13,6 @@ std::string ParseDelegate(std::string pScript);
 std::vector<unsigned char> ToUnsignedCharVector(std::string pString);
 bool IsProofOfForkScript(const CScript scriptSig);
 CTxDestination GetStakeDelegate(const CScript& scriptPubKey, bool *fValid);
+uint64_t GetRandomInt();
+uint64_t ExtractRandomInt(CScript scriptSig);
 #endif

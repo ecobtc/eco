@@ -3,9 +3,16 @@ from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 
 class Node:
     def __init__(self, rpc_port, rpc_user, rpc_password):
-        self.rpc_connection = AuthServiceProxy("http://%s:%s@127.0.0.1:%s"%(rpc_user, rpc_password, rpc_port))
         self.address_list = []
         self.staking_address_list = []
+        self.rpc_port = rpc_port
+        self.rpc_user = rpc_user
+        self.rpc_password = rpc_password
+        self.connect()
+
+    def connect(self):
+        self.rpc_connection = AuthServiceProxy("http://%s:%s@127.0.0.1:%s"%(self.rpc_user, self.rpc_password, self.rpc_port))
+        return self.rpc_connection
 
     def generate_address_list(self, address_count):
         for x in range(address_count):

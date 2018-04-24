@@ -117,39 +117,32 @@ size_t writeFunction(void *ptr, size_t size, size_t nmemb, std::string* data) {
     data->append((char*) ptr, size * nmemb);
     return size * nmemb;
 }
-bool GetLotto(time_t timestamp, CCoinsLotto &lotto)
+bool GetLotto(time_t timestamp, CCoinsLotto &lotto, uint64_t randomInt)
 {
     FlushStateToDisk();
     double nRunningAmount = 0;
-    std::string pDataRaw; // = pOutputValue->FirstChild()->Value();
-    try {
-        uc::curl::easy("https://cdn.star.nesdis.noaa.gov/GOES16/ABI/CONUS/16/latest.jpg") >> pDataRaw;
-    } catch (std::exception& ex) {
-        std::cerr << "exception : " << ex.what() << std::endl;
-        return false;
+    //If the block is old we check agains the hash in the coinbase transaction provided as parameter, else, we check against the beacon
+    if (!((timestamp + 30) < GetTime()))
+    {
+        randomInt = GetRandomInt();
     }
-    CSHA512 hasher;
-    unsigned char sha512hash[64];
-    hasher.Write((const unsigned char*)pDataRaw.c_str(), pDataRaw.length()).Finalize(&sha512hash[0]);
-    uint64_t randomInt;
-    memcpy(&randomInt, &sha512hash[0], sizeof(uint64_t));
     boost::random::mt19937 engine(randomInt);
     boost::function<double()> randu = boost::bind(boost::random::uniform_real_distribution<>(0, 1), engine);
     lotto.nLuckyCoin = static_cast<double>(randu());
     if (GetUTXOLotto(pcoinsdbview.get(), lotto)) {
-        if (!lotto.nWallets.empty())
-        {
-            lotto.nLuckyAddress = DecodeDestination(lotto.nWallets.begin()->first);
-            nRunningAmount = lotto.nLuckyCoin;
-            for(const auto wallet : lotto.nWallets){
-                const double probability = wallet.second/static_cast<double>(lotto.nTotalAmount);
-                if (nRunningAmount < probability){
-                    lotto.nLuckyAddress = DecodeDestination(wallet.first);
-                    return true;
-                }
-                nRunningAmount -= probability;
-            }
+      if (!lotto.nWallets.empty())
+      {
+        lotto.nLuckyAddress = DecodeDestination(lotto.nWallets.begin()->first);
+        nRunningAmount = lotto.nLuckyCoin;
+        for(const auto wallet : lotto.nWallets){
+          const double probability = wallet.second/static_cast<double>(lotto.nTotalAmount);
+          if (nRunningAmount < probability){
+            lotto.nLuckyAddress = DecodeDestination(wallet.first);
+            return true;
+          }
+          nRunningAmount -= probability;
         }
+      }
     }
     return true;
 }
@@ -218,7 +211,8 @@ bool IsLottoWinner(CBlock *pblock)
     CTxDestination address;
     CCoinsLotto lotto;
     ExtractDestination(pblock->vtx[0]->vout[0].scriptPubKey, address);
-    GetLotto(pblock->nTime, lotto);
+    uint64_t randomInt = ExtractRandomInt(pblock->vtx[0]->vin[0].scriptSig);
+    GetLotto(pblock->nTime, lotto, randomInt);
     LogPrintf("Valid address: %s\n", EncodeDestination(lotto.nLuckyAddress));
     bool fLottoMatch = false;
     if(!lotto.nWallets.empty()){

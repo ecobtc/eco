@@ -34,7 +34,7 @@
 #include <algorithm>
 #include <queue>
 #include <utility>
-
+#include <poshelpers.h>
 //////////////////////////////////////////////////////////////////////////////
 //
 // BitcoinMiner
@@ -430,8 +430,8 @@ void BlockAssembler::addPackageTxs(int &nPackagesSelected, int &nDescendantsUpda
 
 
 
-std::string GetSignature(CBlock* pblock, CKey key, unsigned int nHeight){
-    return MakeSignature(BlockWitnessMerkleRoot(*pblock), pblock->nTime, key, nHeight);
+std::string GetSignature(CBlock* pblock, CKey key, unsigned int nHeight, uint64_t randomInt){
+    return MakeSignature(BlockWitnessMerkleRoot(*pblock), pblock->nTime, key, nHeight, randomInt);
 }
 
 void SignCoinbaseTx(CBlock* pblock, const CBlockIndex* pindexPrev, CTxDestination address, CKey key, unsigned int& nExtraNonce)
@@ -446,7 +446,7 @@ void SignCoinbaseTx(CBlock* pblock, const CBlockIndex* pindexPrev, CTxDestinatio
     ++nExtraNonce;
     unsigned int nHeight = pindexPrev->nHeight+1; // Height first in coinbase required for block.version=2
     CMutableTransaction txCoinbase(*pblock->vtx[0]);
-    std::string pAddressSignature = GetSignature(pblock, key, nHeight);
+    std::string pAddressSignature = GetSignature(pblock, key, nHeight, GetRandomInt());
     const char* pPreparedSignature = pAddressSignature.c_str();
     txCoinbase.vin[0].scriptSig = (CScript() << nHeight << CScriptNum(nExtraNonce)) + COINBASE_FLAGS << std::vector<unsigned char>((const unsigned char*)pPreparedSignature, (const unsigned char*)pPreparedSignature + strlen(pPreparedSignature));
     assert(txCoinbase.vin[0].scriptSig.size() <= 900);

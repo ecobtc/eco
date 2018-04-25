@@ -29,6 +29,7 @@
 #include <poshelpers.h>
 #include <script/standard.h>
 #include <stdint.h>
+#include <consensus/merkle.h>
 
 #include <univalue.h>
 
@@ -146,6 +147,9 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool tx
     result.push_back(Pair("version", block.nVersion));
     result.push_back(Pair("versionHex", strprintf("%08x", block.nVersion)));
     result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
+    result.push_back(Pair("coinbasesigner", EncodeDestination(ParseCoinbaseSignature(const_cast<CBlock*>(&block)))));
+    result.push_back(Pair("randomint", ExtractRandomInt(block.vtx[0]->vin[0].scriptSig)));
+    result.push_back(Pair("witnessmerkleroot", BlockWitnessMerkleRoot(block).ToString()));
     UniValue txs(UniValue::VARR);
     for(const auto& tx : block.vtx)
     {

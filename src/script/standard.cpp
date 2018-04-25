@@ -430,10 +430,10 @@ CScript GetStakeScriptForDestination(const CTxDestination& dest, const CTxDestin
     return script;
 }
 
-CScript GetForkProofScript(uint256 nMerkleRoot, uint32_t nTime, int nHeight, std::string pBadSignature)
+CScript GetForkProofScript(uint256 nMerkleRoot, uint32_t nTime, int nHeight, uint64_t randomInt, std::string pBadSignature)
 {
     CScript script;
-    std::string pSignature = "startproofstartmerkle" + EncodeBase64(nMerkleRoot.ToString()) + "endmerklestartntime" +  EncodeBase64(boost::lexical_cast<std::string>(nTime)) + "endntime" + pBadSignature +"startheight" + EncodeBase64(boost::lexical_cast<std::string>(nHeight)) + "endheightendproof";
+    std::string pSignature = "startproofstartmerkle" + EncodeBase64(nMerkleRoot.ToString()) + "endmerklestartntime" +  EncodeBase64(boost::lexical_cast<std::string>(nTime)) + "endntime" + pBadSignature +"startheight" + EncodeBase64(boost::lexical_cast<std::string>(nHeight)) + "endheightstartnrandint" + EncodeBase64(boost::lexical_cast<std::string>(randomInt)) + "endnrandintendproof";
     const char* pPreparedSignature = pSignature.c_str();
     script = (CScript() << std::vector<unsigned char>((const unsigned char*)pPreparedSignature, (const unsigned char*)pPreparedSignature + strlen(pPreparedSignature))); //<< ToByteVector(nMerkleRoot)  << ToByteVector(nTime) << ToByteVector(pBadSignature) << OP_CHECKPROOF;
     return script;
@@ -481,6 +481,7 @@ std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigne
   ss << nMerkleRoot;
   ss << nTime;
   ss << nHeight;
+  ss << randomInt;
   std::vector<unsigned char> vchSig;
   if (!key.SignCompact(ss.GetHash(), vchSig))
   return "";

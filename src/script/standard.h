@@ -190,6 +190,6 @@ CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
 CScript GetScriptForWitness(const CScript& redeemscript);
 
 CScript GetStakeScriptForDestination(const CTxDestination& dest, const CTxDestination& dest2);
-CScript GetForkProofScript(uint256 nMerkleRoot, uint32_t nTime, int nHeight, std::string pBadSignature);
+CScript GetForkProofScript(uint256 nMerkleRoot, uint32_t nTime, int nHeight, uint64_t randomInt, std::string pBadSignature);
 std::string MakeSignature(uint256 nMerkleRoot, uint32_t nTime, CKey key, unsigned int nHeight, uint64_t randomInt);
 #endif // BITCOIN_SCRIPT_STANDARD_H

@@ -51,3 +51,13 @@ class Node:
 
     def getblockcount(self):
         return self.rpc_connection.getblockcount()
+
+    def getblock(self, height):
+        hash = self.rpc_connection.getblockhash(height)
+        return self.rpc_connection.getblock(hash)
+
+    def signfakeblock(self, address, time, root, height, random_int):
+        return self.rpc_connection.signfakeblock(str(address), str(time), str(root), str(height), str(random_int))
+
+    def postforkproof(self, address, root, time, height, randomInt, signature):
+        return self.rpc_connection.postforkproof(address, root, time, height, randomInt, signature)

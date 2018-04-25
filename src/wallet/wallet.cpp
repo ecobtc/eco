@@ -3067,7 +3067,7 @@ bool CWallet::CreateTransaction(const std::vector<CRecipient>& vecSend, CWalletT
     return true;
 }
 
-bool CWallet::CreateProof(uint256 nMerkleRoot, uint64_t nTime, int nHeight, std::string pSignature, const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, CAmount& nFeeRet,
+bool CWallet::CreateProof(uint256 nMerkleRoot, uint64_t nTime, int nHeight, uint64_t randomInt, std::string pSignature, const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, CAmount& nFeeRet,
                                 int& nChangePosInOut, std::string& strFailReason, const CCoinControl& coin_control, bool sign)
 {
     CAmount nValue = 0;
@@ -3182,7 +3182,7 @@ bool CWallet::CreateProof(uint256 nMerkleRoot, uint64_t nTime, int nHeight, std:
             ReadBlockFromDisk(block, pblockindex, GetParams());
             COutPoint outpoint = COutPoint(block.vtx[0]->GetHash(), 0);
             txNew.vin.resize(1);
-            txNew.vin.push_back(CTxIn(outpoint,GetForkProofScript(nMerkleRoot, nTime, nHeight, pSignature), nSequence));
+            txNew.vin.push_back(CTxIn(outpoint,GetForkProofScript(nMerkleRoot, nTime, nHeight, randomInt, pSignature), nSequence));
 
         }
 

@@ -156,14 +156,17 @@ CTxDestination ExtractDestinationFromSignature(CScript scriptSig, uint256 merkle
     std::string pStringSignature = ParseSignature(pScript);
     std::vector<unsigned char> vchSig(pStringSignature.begin(), pStringSignature.end());
     CHashWriter ss(SER_GETHASH, 0);
+    uint64_t randomInt = ExtractRandomInt(scriptSig);
     ss << merkleRoot;
     ss << nTime;
     ss << nHeight;
+    ss << randomInt;
     if (!pubkey.RecoverCompact(ss.GetHash(), vchSig))
       throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Couldn't recover message");
     if (!pubkey.IsValid())
       throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "invalid pubkey");
-    parsedAddress = GetDestinationForKey(pubkey, output_type);
+    parsedAddress = GetDestinationForKey(pubkey, out
+      put_type);
     if (!IsValidDestination(parsedAddress))
       throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "invalid destination");
     return parsedAddress;

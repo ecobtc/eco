@@ -92,16 +92,14 @@ uint64_t GetRandomInt()
     uint64_t randomInt;
     std::string pDataRaw; // = pOutputValue->FirstChild()->Value();
     try {
-        uc::curl::global libcurlInit;
         uc::curl::easy("https://cdn.star.nesdis.noaa.gov/GOES16/ABI/CONUS/16/latest.jpg") >> pDataRaw;
-    } catch (const std::exception& ex) {
-        std::cerr << "exception : " << ex.what() << std::endl;
+        CSHA512 hasher;
+        unsigned char sha512hash[64];
+        hasher.Write((const unsigned char*)pDataRaw.c_str(), pDataRaw.length()).Finalize(&sha512hash[0]);
+        memcpy(&randomInt, &sha512hash[0], sizeof(uint64_t));
+        return randomInt;
+    } catch (...) {
         LogPrintf("exception : Couldn't connect to endpoint\n");
-        return false;
+        return 0;
     }
-    CSHA512 hasher;
-    unsigned char sha512hash[64];
-    hasher.Write((const unsigned char*)pDataRaw.c_str(), pDataRaw.length()).Finalize(&sha512hash[0]);
-    memcpy(&randomInt, &sha512hash[0], sizeof(uint64_t));
-    return randomInt;
 }

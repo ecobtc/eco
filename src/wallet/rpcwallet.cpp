@@ -662,16 +662,17 @@ UniValue signfakeblock(const JSONRPCRequest& request)
 
     if (request.fHelp)
         throw std::runtime_error(
-            "signmessage \"TEST\" \"TEST\"\n"
+            "signfakeblock \"TEST\" \"TEST\"\n"
         );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
     EnsureWalletIsUnlocked(pwallet);
     std::string strAddress = request.params[0].get_str();
-    uint64_t nTime = stoi(request.params[1].get_str());
+    uint64_t nTime = boost::lexical_cast<uint64_t>(request.params[1].get_str());
     uint256 nMerkleRoot = uint256S(request.params[2].get_str());
-    unsigned int nHeight = stoi(request.params[3].get_str());
+    unsigned int nHeight = boost::lexical_cast<unsigned int>(request.params[3].get_str());
+    uint64_t randomInt = boost::lexical_cast<uint64_t>(request.params[4].get_str());
     CTxDestination dest = DecodeDestination(strAddress);
     if (!IsValidDestination(dest)) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid address");
@@ -685,12 +686,11 @@ UniValue signfakeblock(const JSONRPCRequest& request)
 
     CKey key;
     if (!pwallet->GetKey(keyID, key)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key not aFvailable");
     }
 
-    std::string pPreparedSignature = MakeSignature(nMerkleRoot, nTime, key, nHeight, GetRandomInt());
-    CScript pScript = GetForkProofScript(nMerkleRoot, nTime, nHeight, pPreparedSignature);
-    std::string pScriptString = ScriptToString(pScript);
+    std::string pPreparedSignature = MakeSignature(nMerkleRoot, nTime, key, nHeight, randomInt);
+    CScript pScript = GetForkProofScript(nMerkleRoot, nTime, nHeight, randomInt, pPreparedSignature);
     std::string pStringScript = ScriptToString(pScript);
     std::string pProof = ParseProofOfFork(pStringScript);
     std::string pParsedMerkle = ParseMerkleRoot(pProof);
@@ -698,9 +698,11 @@ UniValue signfakeblock(const JSONRPCRequest& request)
     std::string pParsedHeight = ParseHeight(pProof);
     std::string pParsedSignature = ParseSignature(pProof);
     const std::vector<CTxOut> vout;
-    LogPrintf("Correctly identified proof of fork script: %s\n", IsProofOfForkScript(pScript));
-    LogPrintf("Validated proof of fork: %s\n", ValidateProofOfFork(pScript, vout));
-    return pPreparedSignature;
+    UniValue result(UniValue::VOBJ);
+    result.push_back(Pair("identified", IsProofOfForkScript(pScript)));
+    result.push_back(Pair("validated", ValidateProofOfFork(pScript, vout)));
+    result.push_back(Pair("signature", pPreparedSignature));
+    return result;
 }
 
 
@@ -3688,7 +3690,7 @@ UniValue staketoaddress(const JSONRPCRequest& request)
 }
 
 
-static void PostProof(CWallet * const pwallet, const CTxDestination &address, uint256 nMerkleRoot, int64_t nTime, int nHeight, std::string pSignature, CWalletTx& wtxNew)
+static void PostProof(CWallet * const pwallet, const CTxDestination &address, uint256 nMerkleRoot, int64_t nTime, int nHeight, uint64_t randomInt, std::string pSignature, CWalletTx& wtxNew)
 {
     CAmount curBalance = pwallet->GetBalance();
 
@@ -3708,7 +3710,7 @@ static void PostProof(CWallet * const pwallet, const CTxDestination &address, ui
     int nChangePosRet = -1;
     CRecipient recipient = {scriptPubKey, nValue, fSubtractFeeFromAmount};
     vecSend.push_back(recipient);
-    if (!pwallet->CreateProof(nMerkleRoot, nTime, nHeight, pSignature, vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError, no_coin_control)) {
+    if (!pwallet->CreateProof(nMerkleRoot, nTime, nHeight, randomInt, pSignature, vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError, no_coin_control)) {
         if (!fSubtractFeeFromAmount && nValue + nFeeRequired > curBalance)
             strError = strprintf("Error: This transaction requires a transaction fee of at least %s", FormatMoney(nFeeRequired));
         throw JSONRPCError(RPC_WALLET_ERROR, strError);
@@ -3726,6 +3728,7 @@ bool postforkproof(const CBlock* pblock){
     std::string pScript = ScriptToString(pblock->vtx[0]->vin[0].scriptSig);
     std::string pHeight = ParseHeight(pScript);
     std::string pSignature = ParseSignature(pScript);
+    uint64_t randomInt = ExtractRandomInt(pblock->vtx[0]->vin[0].scriptSig);
     uint32_t nTime = pblock->nTime;
     uint256 nMerkleRoot = BlockWitnessMerkleRoot(*pblock);
     unsigned int nHeight = boost::lexical_cast<unsigned int>(pHeight);
@@ -3736,7 +3739,7 @@ bool postforkproof(const CBlock* pblock){
     if(!pwallet->GetKeyFromPool(key))
         return error("No address to cash in fork attempt\n");
     CTxDestination dest = GetDestinationForKey(key, g_address_type);
-    PostProof(pwallet, dest, nMerkleRoot, nTime, nHeight, pSignature, wtx);
+    PostProof(pwallet, dest, nMerkleRoot, nTime, nHeight, randomInt, pSignature, wtx);
     return true;
 }
 
@@ -3756,8 +3759,9 @@ UniValue postforkproof(const JSONRPCRequest& request)
             "1. \"address\"            (string, required) The bitcoin address to send to.\n"
             "2. \"merkleroot\"         Conflicting block's Merkle Root\n"
             "3. \"time\"               Conflicting block's Time\n"
-            "3. \"height\"               Conflicting block's Height\n"
-            "4. \"signature\"          Conflicting block's Signature\n"
+            "4. \"height\"               Conflicting block's Height\n"
+            "5. \"randomint\"               Conflicting block's Rantom Int\n"
+            "6. \"signature\"          Conflicting block's Signature\n"
             "\nExamples:\n"
             + HelpExampleCli("postforkproof", "\"0.1\" 1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd")
         );
@@ -3774,15 +3778,74 @@ UniValue postforkproof(const JSONRPCRequest& request)
     LOCK2(cs_main, pwallet->cs_wallet);
     CWalletTx wtx;
     uint256 nMerkleRoot;
-    nMerkleRoot = uint256S(request.params[0].get_str());
+    nMerkleRoot = uint256S(request.params[1].get_str());
     int64_t nTime;
-    nTime = request.params[1].get_int();
+    nTime = request.params[2].get_int();
     int nHeight;
-    nHeight = request.params[2].get_int();
+    nHeight = request.params[3].get_int();
     std::string pSignature;
-    pSignature = request.params[3].get_str();
-    PostProof(pwallet, dest, nMerkleRoot, nTime, nHeight, pSignature, wtx);
+    pSignature = request.params[5].get_str();
+    uint64_t randomInt = boost::lexical_cast<uint64_t>(request.params[4].get_str());
+    PostProof(pwallet, dest, nMerkleRoot, nTime, nHeight, randomInt, pSignature, wtx);
     return wtx.GetHash().GetHex();
+}
+
+
+UniValue signfakeblockandpostproof(const JSONRPCRequest& request)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
+    }
+
+    if (request.fHelp)
+        throw std::runtime_error(
+            "signfakeblock \"TEST\" \"TEST\"\n"
+        );
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    EnsureWalletIsUnlocked(pwallet);
+    std::string strAddress = request.params[0].get_str();
+    uint64_t nTime = boost::lexical_cast<uint64_t>(request.params[1].get_str());
+    uint256 nMerkleRoot = uint256S(request.params[2].get_str());
+    unsigned int nHeight = boost::lexical_cast<unsigned int>(request.params[3].get_str());
+    uint64_t randomInt = boost::lexical_cast<uint64_t>(request.params[4].get_str());
+    CTxDestination dest = DecodeDestination(strAddress);
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid address");
+    }
+
+    const CKeyID keyID = GetKeyForDestination(*pwallet, dest);
+
+    if (!&keyID) {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
+    }
+
+    CKey key;
+    if (!pwallet->GetKey(keyID, key)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key not aFvailable");
+    }
+
+    std::string pPreparedSignature = MakeSignature(nMerkleRoot, nTime, key, nHeight, randomInt);
+    CScript pScript = GetForkProofScript(nMerkleRoot, nTime, nHeight, randomInt, pPreparedSignature);
+    std::string pScriptString = ScriptToString(pScript);
+    std::string pStringScript = ScriptToString(pScript);
+    std::string pProof = ParseProofOfFork(pStringScript);
+    std::string pParsedMerkle = ParseMerkleRoot(pProof);
+    std::string pParsedTime = ParseTime(pProof);
+    std::string pParsedHeight = ParseHeight(pProof);
+    std::string pParsedSignature = ParseSignature(pProof);
+    const std::vector<CTxOut> vout;
+    LogPrintf("Correctly identified proof of fork script: %s\n", IsProofOfForkScript(pScript));
+    LogPrintf("Validated proof of fork: %s\n", ValidateProofOfFork(pScript, vout));
+    CPubKey otherkey;
+    CWalletTx wtx;
+    if(!pwallet->GetKeyFromPool(otherkey))
+        return error("No address to cash in fork attempt\n");
+    CTxDestination dest2 = GetDestinationForKey(otherkey, g_address_type);
+    PostProof(pwallet, dest2, nMerkleRoot, nTime, nHeight, randomInt, pPreparedSignature, wtx);
+    return pPreparedSignature;
 }
 
 extern UniValue abortrescan(const JSONRPCRequest& request); // in rpcdump.cpp
@@ -3855,6 +3918,7 @@ static const CRPCCommand commands[] =
     { "generating",         "generate",                 &generate,                 {"nblocks","maxtries"} },
     { "staking",            "postforkproof",            &postforkproof,            {}},
     { "debugging",          "signfakeblock",            &signfakeblock,            {}},
+    { "debugging",          "signfakeblock",            &signfakeblockandpostproof,            {}},
 
 };
 

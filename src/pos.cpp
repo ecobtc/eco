@@ -165,8 +165,7 @@ CTxDestination ExtractDestinationFromSignature(CScript scriptSig, uint256 merkle
       throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Couldn't recover message");
     if (!pubkey.IsValid())
       throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "invalid pubkey");
-    parsedAddress = GetDestinationForKey(pubkey, out
-      put_type);
+    parsedAddress = GetDestinationForKey(pubkey, output_type);
     if (!IsValidDestination(parsedAddress))
       throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "invalid destination");
     return parsedAddress;

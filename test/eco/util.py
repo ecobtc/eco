@@ -47,7 +47,7 @@ class Node:
     def generate_blockchain_for_address_list(self):
         for address in self.address_list:
             self.generate_blockchain_for_address(address)
-            time.sleep(1)
+
 
     def getblockcount(self):
         return self.rpc_connection.getblockcount()

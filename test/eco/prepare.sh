@@ -1,4 +1,4 @@
-sleep 10
+
 echo "Starting"
 rm blockgenesis.sh
 rm addresses

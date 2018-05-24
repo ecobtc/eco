@@ -22,13 +22,12 @@ while True:
         owned_address = response['owned_address']
         up_for_grabs = response['up_for_grabs']
         print(response)
-        if owned_address == 'true' and up_for_grabs == 'true':
+        if (owned_address == 'true' and up_for_grabs == 'true') or len(lucky_address) == 0:
             print("Sending generate command")
             command = [['generatetoaddress', 1, lucky_address]]
             response = rpc_connection.batch_(command)[0]
             print(response)
-        time.sleep(15)
     except (KeyboardInterrupt):
         break
     except:
-        time.sleep(2)
+        time.sleep(1)

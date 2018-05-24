@@ -1,16 +1,16 @@
-./src/bitcoin-cli -rpcport=8334 generatetoaddress 1 3BzT99NEeyy2NZbNgP5rxXAUdjsmtxXh6C
+./src/bitcoin-cli -rpcport=8334 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8334 generatetoaddress 1 3NLoNGgdTUZXZNQFHo9gW3zpeqmNzYvQ14
+./src/bitcoin-cli -rpcport=8334 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8335 generatetoaddress 1 3DthqHwY7oixcVQgbWojKM327uFkCmNkdt
+./src/bitcoin-cli -rpcport=8335 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8335 generatetoaddress 1 3H5o1GX1tFUohWw2mmRLqwj4mKd6qwYh5U
+./src/bitcoin-cli -rpcport=8335 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8336 generatetoaddress 1 38NaifaJtmJou6a6KAuNi2w7pqAZjcxESM
+./src/bitcoin-cli -rpcport=8336 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8336 generatetoaddress 1 3D2MkYBJrU7Y2HkmULi69NZwK8nFtBrydp
+./src/bitcoin-cli -rpcport=8336 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8337 generatetoaddress 1 33zJncD7ttZmFWGwyHZLWJY3vaFFwDHsfx
+./src/bitcoin-cli -rpcport=8337 generatetoaddress 1 
 sleep 1
-./src/bitcoin-cli -rpcport=8337 generatetoaddress 1 3KqYePBnZk7bPwhpx2XdNNz1NW9BwSpic9
+./src/bitcoin-cli -rpcport=8337 generatetoaddress 1 
 sleep 1

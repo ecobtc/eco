@@ -27,12 +27,14 @@
 #include <stdint.h>
 #include <wallet/rpcwallet.h>
 #include <timedata.h>
+#include <util.h>
 UniValue getluckyaddress(const JSONRPCRequest& request)
 {
     UniValue ret(UniValue::VOBJ);
     time_t rando;
     time(&rando);
     CCoinsLotto lotto;
+    bool econet = gArgs.GetBoolArg("-econet", false);
     CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
     if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
         return NullUniValue;
@@ -48,7 +50,7 @@ UniValue getluckyaddress(const JSONRPCRequest& request)
         }else{
           ret.pushKV("owned_address", "true");
         }
-        if((GetTime() - chainActive.Tip()->nTime)>=15){
+        if(((GetTime() - chainActive.Tip()->nTime)>=15) || econet){
           ret.pushKV("up_for_grabs", "true");
           ret.pushKV("time_to_next", 0);
         }else{

@@ -48,6 +48,7 @@
 
 #include <poshelpers.h>
 #include <crypto/sha512.h>
+#include <util.h>
 
 #include "uccurl.h"
 
@@ -225,13 +226,18 @@ bool IsLottoWinner(CBlock *pblock)
     return fLottoMatch;
 }
 
-bool IsNewer(CBlock *pblock)
+bool IsNewer(CBlock *pblock, const Consensus::Params& params)
 {
     CBlockIndex* pprevblockindex = mapBlockIndex[pblock->GetBlockHeader().hashPrevBlock];
     time_t blocktime = pblock->nTime;
     time_t prevblocktime = pprevblockindex->nTime;
     unsigned int prevblockheight = pprevblockindex->nHeight;
-    return (GetHeight(pblock) == (prevblockheight + 1) && ((blocktime - prevblocktime) >= 15) || IsStakelessHeight(pblock));
+    bool intervalpassed = (((blocktime - prevblocktime) >= 15) || params.BIP16Height == 514); //BIPCheck is for testnet check
+    bool econet = gArgs.GetBoolArg("-econet", false);
+    if (econet) {
+        return (GetHeight(pblock) == (prevblockheight + 1));
+    }
+    return ((GetHeight(pblock) == (prevblockheight + 1) && intervalpassed) || IsStakelessHeight(pblock));
 }
 
 unsigned int GetPrevBlockHeight(CBlock *pblock)
@@ -242,7 +248,7 @@ unsigned int GetPrevBlockHeight(CBlock *pblock)
 
 bool IsHeightConsistent(CBlock *pblock)
 {
-  return (GetPrevBlockHeight(pblock) + 1)  == GetHeight(pblock);
+  return (GetPrevBlockHeight(pblock) + 1  == GetHeight(pblock));
 }
 
 bool CheckProofOfStake(const CBlock *pcblock, const Consensus::Params& params){
@@ -260,11 +266,11 @@ bool CheckProofOfStake(const CBlock *pcblock, const Consensus::Params& params){
         }
         if (!fmatch) return false;
         if (!IsHeightConsistent(pblock)) return false;
-        if (IsStakelessHeight(pblock) && fmatch && IsNewer(pblock)) return true;
+        if (IsStakelessHeight(pblock) && fmatch && IsNewer(pblock, params)) return true;
         LogPrintf("Block Timestamp: %d\n", pblock->nTime);
         LogPrintf("Requesting address: %s\n", EncodeDestination(address));
         LogPrintf("Block height: %s\n", GetHeight(pblock));
-        return IsLottoWinner(pblock) && IsNewer(pblock) && fmatch;// && pubkey.GetID() == *keyID;
+        return IsLottoWinner(pblock) && IsNewer(pblock, params) && fmatch;// && pubkey.GetID() == *keyID;
     }
     return false;
 }

@@ -7,7 +7,7 @@ Follow directions in build-unix.md.
 From Ubuntu 18.04 I had to install a number of packages:
 
 ```
-sudo apt install build-essential libtool autotools-dev autoconf automake pkg-config libssl-dev libboost-all-dev libqt5gui5 libqt5core5a libqt5dbus5 qttools5-dev qttools5-dev-tools libprotobuf-dev protobuf-compiler libqrencode-dev autoconf openssl libssl-dev libevent-dev libminiupnpc-dev
+sudo apt install build-essential libtool autotools-dev autoconf automake pkg-config libssl-dev libboost-all-dev libqt5gui5 libqt5core5a libqt5dbus5 qttools5-dev qttools5-dev-tools libprotobuf-dev protobuf-compiler libqrencode-dev autoconf openssl libssl-dev libevent-dev libminiupnpc-dev g++ gcc
 ```
     
 ## libdb4.8

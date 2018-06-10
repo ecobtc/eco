@@ -1722,6 +1722,11 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect)
     // Connect to specific addresses
     if (!connect.empty())
     {
+        LogPrintf("Connecting to ");
+        for (size_t i = 0; i < connect.size(); ++i) {
+            LogPrintf("%s, ", connect[i]);
+        }
+        LogPrintf("\n");
         for (int64_t nLoop = 0;; nLoop++)
         {
             ProcessOneShot();

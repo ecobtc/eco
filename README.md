@@ -1,5 +1,4 @@
 # BitcoinEco: proof of stake cryptocurrency driven by environmental entropy
------------------
 
 ## What is BitcoinEco?
 
